@@ -106,8 +106,59 @@ export class CountdownPhaseAlertElement extends HTMLElement {
 
   #updateLabel(label: string) {
     if (this.#labelEl) {
-      this.#labelEl.innerHTML = label;
+      this.#labelEl.innerHTML = this.#sanitizeHtml(label);
     }
+  }
+
+  /**
+   * Sanitizes HTML content by only allowing safe tags (strong, em, b, i, span).
+   * This prevents XSS attacks while preserving necessary formatting.
+   */
+  #sanitizeHtml(html: string): string {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const fragment = template.content;
+
+    const allowedTags = new Set(['STRONG', 'EM', 'B', 'I', 'SPAN', '#text']);
+
+    const sanitizeNode = (node: Node): Node | null => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.cloneNode(true);
+      }
+
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as Element;
+        if (!allowedTags.has(element.tagName)) {
+          // Replace disallowed elements with their text content
+          return document.createTextNode(element.textContent || '');
+        }
+
+        // Clone the allowed element without attributes (except for span class)
+        const clone = document.createElement(element.tagName.toLowerCase());
+        // Recursively sanitize children
+        Array.from(node.childNodes).forEach((child) => {
+          const sanitizedChild = sanitizeNode(child);
+          if (sanitizedChild) {
+            clone.appendChild(sanitizedChild);
+          }
+        });
+        return clone;
+      }
+
+      return null;
+    };
+
+    const sanitizedFragment = document.createDocumentFragment();
+    Array.from(fragment.childNodes).forEach((child) => {
+      const sanitizedChild = sanitizeNode(child);
+      if (sanitizedChild) {
+        sanitizedFragment.appendChild(sanitizedChild);
+      }
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.appendChild(sanitizedFragment);
+    return wrapper.innerHTML;
   }
 
   #updateAlertClasses(classes: string) {
