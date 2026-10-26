@@ -1610,8 +1610,11 @@ openid_connect.token.errors.invalid_aud: Affirmation liée à l’auditoire non 
 openid_connect.token.errors.invalid_authentication: Le client doit s’authentifier par PKCE ou private_key_jwt, code_challenge ou client_assertion manquant
 openid_connect.token.errors.invalid_code: n’est pas valide, car il ne correspond à aucun utilisateur. Veuillez consulter notre documentation à https://developers.login.gov/oidc/#token
 openid_connect.token.errors.invalid_code_verifier: code_verifier ne correspondait pas à code_challenge
+openid_connect.token.errors.invalid_exp: exp ne doit pas dépasser %{max_seconds} secondes dans le futur
 openid_connect.token.errors.invalid_iat: iat doit être un horodatage Unix entier ou à virgule flottante représentant une heure dans le passé
+openid_connect.token.errors.invalid_jti: jti doit être une chaîne non vide et unique pour chaque assertion client
 openid_connect.token.errors.invalid_signature: Impossible de valider l’assertion contre les clés publiques enregistrées
+openid_connect.token.errors.replayed_jti: jti a déjà été utilisé ; générez une nouvelle assertion client pour chaque demande de jeton
 openid_connect.user_info.errors.malformed_authorization: Forme de l’en-tête d’autorisation non valide
 openid_connect.user_info.errors.no_authorization: Aucune en-tête d’autorisation fournie
 openid_connect.user_info.errors.not_found: L’autorisation pour le contenu du access_token fourni introuvable ou il peut être expiré

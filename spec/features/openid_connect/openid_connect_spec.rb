@@ -1279,6 +1279,7 @@ RSpec.describe 'OpenID Connect' do
       aud: api_openid_connect_token_url,
       jti: SecureRandom.hex,
       exp: 5.minutes.from_now.to_i,
+      iat: Time.zone.now.to_i,
     }
 
     client_assertion = JWT.encode(jwt_payload, client_private_key, 'RS256')

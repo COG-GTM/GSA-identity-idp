@@ -254,7 +254,191 @@ RSpec.describe OpenidConnectTokenForm do
         context 'with no issued time' do
           before { jwt_payload.except!(:iat) }
 
-          it 'is still valid' do
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include('Missing required claim iat')
+          end
+        end
+
+        context 'without an expiration' do
+          before { jwt_payload.except!(:exp) }
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include('Missing required claim exp')
+          end
+        end
+
+        context 'with a non-numeric expiration' do
+          before { jwt_payload[:exp] = 'tomorrow' }
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to be_present
+          end
+        end
+
+        context 'with an expiration too far in the future' do
+          before { jwt_payload[:exp] = 1.hour.from_now.to_i }
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include(
+              t(
+                'openid_connect.token.errors.invalid_exp',
+                max_seconds: OpenidConnectTokenForm::CLIENT_ASSERTION_MAX_LIFETIME_SECONDS,
+              ),
+            )
+          end
+        end
+
+        context 'with a lifetime longer than allowed relative to its issued time' do
+          before do
+            jwt_payload[:iat] = 1.year.ago.to_i
+            jwt_payload[:exp] = 2.minutes.from_now.to_i
+          end
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include(
+              t(
+                'openid_connect.token.errors.invalid_exp',
+                max_seconds: OpenidConnectTokenForm::CLIENT_ASSERTION_MAX_LIFETIME_SECONDS,
+              ),
+            )
+          end
+        end
+
+        context 'with a long-lived assertion once its exp is inside the window' do
+          let(:exp) { 1.hour.from_now }
+
+          before do
+            jwt_payload[:exp] = exp.to_i
+            expect(OpenidConnectTokenForm.new(params).valid?).to eq(false)
+          end
+
+          it 'is still invalid' do
+            travel_to(exp - 2.minutes) do
+              expect(valid?).to eq(false)
+              expect(form.errors[:client_assertion]).to include(
+                t(
+                  'openid_connect.token.errors.invalid_exp',
+                  max_seconds: OpenidConnectTokenForm::CLIENT_ASSERTION_MAX_LIFETIME_SECONDS,
+                ),
+              )
+            end
+          end
+        end
+
+        context 'without a jti' do
+          before { jwt_payload.except!(:jti) }
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include('Missing required claim jti')
+          end
+        end
+
+        context 'with a blank jti' do
+          before { jwt_payload[:jti] = '' }
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include(
+              t('openid_connect.token.errors.invalid_jti'),
+            )
+          end
+        end
+
+        context 'with a non-string jti' do
+          before { jwt_payload[:jti] = 12345 }
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include(
+              t('openid_connect.token.errors.invalid_jti'),
+            )
+          end
+        end
+
+        context 'with an assertion that was already used for another code' do
+          let(:other_identity) do
+            IdentityLinker.new(create(:user), service_provider).link_identity(
+              acr_values: Saml::Idp::Constants::IAL_AUTH_ONLY_ACR,
+              nonce: SecureRandom.hex,
+              rails_session_id: SecureRandom.hex,
+              ial: 1,
+            )
+          end
+
+          before do
+            first_form = OpenidConnectTokenForm.new(params.merge(code: other_identity.session_uuid))
+            expect(first_form.submit.success?).to eq(true)
+          end
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include(
+              t('openid_connect.token.errors.replayed_jti'),
+            )
+          end
+
+          it 'does not return tokens' do
+            expect(form.submit.success?).to eq(false)
+            expect(form.response).to_not have_key(:id_token)
+            expect(identity.reload.session_uuid).to be_present
+          end
+        end
+
+        context 'with an assertion that failed validation for another reason' do
+          before do
+            failed_form = OpenidConnectTokenForm.new(params.merge(grant_type: 'implicit'))
+            expect(failed_form.submit.success?).to eq(false)
+          end
+
+          it 'does not consume the jti' do
+            expect(valid?).to eq(true)
+          end
+        end
+
+        context 'when validated more than once on the same form' do
+          it 'remains valid' do
+            expect(form.valid?).to eq(true)
+            expect(form.valid?).to eq(true)
+          end
+        end
+
+        context 'with a jti already used by a different service provider' do
+          let(:jti) { SecureRandom.hex }
+          let(:other_service_provider) do
+            create(:service_provider, certs: ['saml_test_sp2', 'saml_test_sp'])
+          end
+          let(:other_identity) do
+            IdentityLinker.new(create(:user), other_service_provider).link_identity(
+              acr_values: Saml::Idp::Constants::IAL_AUTH_ONLY_ACR,
+              nonce: SecureRandom.hex,
+              rails_session_id: SecureRandom.hex,
+              ial: 1,
+            )
+          end
+
+          before do
+            jwt_payload[:jti] = jti
+            other_assertion = JWT.encode(
+              jwt_payload.merge(
+                iss: other_service_provider.issuer,
+                sub: other_service_provider.issuer,
+              ),
+              client_private_key,
+              'RS256',
+            )
+            other_form = OpenidConnectTokenForm.new(
+              params.merge(code: other_identity.session_uuid, client_assertion: other_assertion),
+            )
+            expect(other_form.submit.success?).to eq(true)
+          end
+
+          it 'is valid' do
             expect(valid?).to eq(true)
           end
         end

@@ -26,6 +26,7 @@ RSpec.describe OpenidConnect::TokenController do
         aud: api_openid_connect_token_url,
         jti: SecureRandom.hex,
         exp: 5.minutes.from_now.to_i,
+        iat: Time.zone.now.to_i,
       }
 
       client_private_key = OpenSSL::PKey::RSA.new(Rails.root.join('keys', 'saml_test_sp.key').read)
@@ -69,6 +70,34 @@ RSpec.describe OpenidConnect::TokenController do
         )
 
         expect(@analytics).to_not have_logged_event(:sp_integration_errors_present)
+      end
+    end
+
+    context 'when the client assertion is replayed for a second code' do
+      let(:second_identity) do
+        IdentityLinker.new(create(:user), service_provider).link_identity(
+          acr_values: Saml::Idp::Constants::IAL_AUTH_ONLY_ACR,
+          ial: 1,
+          rails_session_id: SecureRandom.hex,
+        )
+      end
+
+      it 'rejects the second request' do
+        action
+        expect(response).to be_ok
+
+        post :create,
+             params: {
+               grant_type: grant_type,
+               code: second_identity.session_uuid,
+               client_assertion_type: OpenidConnectTokenForm::CLIENT_ASSERTION_TYPE,
+               client_assertion: client_assertion,
+             }
+
+        expect(response).to be_bad_request
+        json = JSON.parse(response.body).with_indifferent_access
+        expect(json).to_not have_key(:id_token)
+        expect(json[:error]).to include(t('openid_connect.token.errors.replayed_jti'))
       end
     end
 

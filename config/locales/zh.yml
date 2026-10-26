@@ -1623,8 +1623,11 @@ openid_connect.token.errors.invalid_aud: 受众声明有误，预期 %{url}
 openid_connect.token.errors.invalid_authentication: 客户必须通过 PKCE 或 private_key_jwt 来验证，缺失 code_challenge 或者 client_assertion
 openid_connect.token.errors.invalid_code: 无效，因为与任何用户都匹配不上。请参阅我们的文档： https://developers.login.gov/oidc/#token
 openid_connect.token.errors.invalid_code_verifier: code_verifier 与 code_challenge 不匹配
+openid_connect.token.errors.invalid_exp: exp 不得晚于当前时间 %{max_seconds} 秒
 openid_connect.token.errors.invalid_iat: iat 必须是整数或者浮动点 Unix 时间印章来代表过去的一个时间
+openid_connect.token.errors.invalid_jti: jti 必须是非空字符串，并且每个客户端断言都必须唯一
 openid_connect.token.errors.invalid_signature: 无法根据任何已注册的公钥验证这个说法
+openid_connect.token.errors.replayed_jti: jti 已被使用；每次令牌请求都需生成新的客户端断言
 openid_connect.user_info.errors.malformed_authorization: 授权标头畸形
 openid_connect.user_info.errors.no_authorization: 未提供授权标头
 openid_connect.user_info.errors.not_found: 就提供的 access_token 内容找不到授权或者授权已过期。
