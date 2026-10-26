@@ -5,7 +5,7 @@ RSpec.describe Risc::SecurityEventsController do
 
   let(:user) { create(:user) }
   let(:identity) { IdentityLinker.new(user, service_provider).link_identity }
-  let(:service_provider) { create(:service_provider) }
+  let(:service_provider) { create(:service_provider, :active) }
 
   let(:rp_private_key) do
     OpenSSL::PKey::RSA.new(

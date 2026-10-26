@@ -7,7 +7,7 @@ RSpec.describe SecurityEventForm do
 
   let(:user) { create(:user) }
   let(:agency) { create(:agency) }
-  let(:service_provider) { create(:service_provider, agency_id: agency.id) }
+  let(:service_provider) { create(:service_provider, :active, agency_id: agency.id) }
   let(:rp_private_key) do
     OpenSSL::PKey::RSA.new(
       File.read(Rails.root.join('keys', 'saml_test_sp.key')),
@@ -260,6 +260,17 @@ RSpec.describe SecurityEventForm do
           expect(form.errors[:iss]).to include('invalid issuer')
         end
       end
+
+      context 'when the service provider is not active' do
+        before { service_provider.update!(active: false) }
+
+        it 'is invalid' do
+          expect(valid?).to eq(false)
+          expect(form.errors[:iss]).to include('invalid issuer')
+          expect(form.errors.details[:iss]).to include(error: :inactive_issuer)
+          expect(form.errors[:sub]).to include('invalid event.subject.sub claim')
+        end
+      end
     end
 
     context 'event type' do
@@ -329,8 +340,35 @@ RSpec.describe SecurityEventForm do
         end
       end
 
+      context 'when the user has only signed in to a different SP in the same agency' do
+        let(:sibling_service_provider) { create(:service_provider, :active, agency_id: agency.id) }
+        let(:sibling_identity) do
+          IdentityLinker.new(user, sibling_service_provider).link_identity
+        end
+        let(:subject_sub) { AgencyIdentityLinker.new(sibling_identity).link_identity.uuid }
+
+        before do
+          jwt_payload[:iss] = service_provider.issuer
+          identity.destroy!
+        end
+
+        it 'is invalid' do
+          expect(valid?).to eq(false)
+          expect(form.error_code).to eq('setData')
+          expect(form.errors.details[:sub]).to include(error: :sub_not_found)
+        end
+
+        it 'does not reset the user password' do
+          expect(ResetUserPassword).not_to receive(:new)
+
+          expect { form.submit }.to_not(change { SecurityEvent.count })
+        end
+      end
+
       context 'when the service provider has no agency' do
-        let(:service_provider) { create(:service_provider, agency: nil, agency_id: nil) }
+        let(:service_provider) do
+          create(:service_provider, :active, agency: nil, agency_id: nil)
+        end
 
         it 'is still valid' do
           expect(valid?).to eq(true)
