@@ -155,6 +155,7 @@ module Idv
     def validate_form
       success = valid?
       increment_rate_limiter!
+      success &&= !limit_if_attempt_count_exceeded
 
       response = Idv::DocAuthFormResponse.new(
         success: success,
@@ -433,6 +434,16 @@ module Idv
       return unless rate_limited?
 
       errors.add(:limit, t('doc_auth.errors.rate_limited_heading'), type: :rate_limited)
+    end
+
+    # Concurrent submissions can all pass the pre-increment check in
+    # limit_if_rate_limited, so the count returned by the increment decides.
+    def limit_if_attempt_count_exceeded
+      return false unless document_capture_session
+      return false if rate_limiter.attempts <= RateLimiter.max_attempts(:idv_doc_auth)
+
+      errors.add(:limit, t('doc_auth.errors.rate_limited_heading'), type: :rate_limited)
+      true
     end
 
     def track_rate_limited
