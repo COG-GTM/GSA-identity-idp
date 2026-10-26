@@ -36,6 +36,7 @@ class OpenidConnectLogoutForm
            if: -> { !reject_id_token_hint? }
   validate :validate_identity, unless: :reject_id_token_hint?
   validate :valid_client_id
+  validate :service_provider_resolved
 
   def initialize(params:, current_user:)
     ATTRS.each do |key|
@@ -58,7 +59,6 @@ class OpenidConnectLogoutForm
   # Used by RedirectUriValidator
   def service_provider
     return @service_provider if defined?(@service_provider)
-    sp_from_client_id = ServiceProvider.find_by(issuer: client_id)
 
     @service_provider =
       if reject_id_token_hint?
@@ -73,6 +73,11 @@ class OpenidConnectLogoutForm
   private
 
   attr_reader :identity, :success
+
+  def sp_from_client_id
+    return @sp_from_client_id if defined?(@sp_from_client_id)
+    @sp_from_client_id = client_id.present? ? ServiceProvider.find_by(issuer: client_id) : nil
+  end
 
   def reject_id_token_hint?
     IdentityConfig.store.reject_id_token_hint_in_logout
@@ -131,13 +136,24 @@ class OpenidConnectLogoutForm
   end
 
   def valid_client_id
-    return unless client_id.present? && id_token_hint.blank?
-    return if service_provider.present?
+    return if client_id.blank?
+    return if sp_from_client_id.present?
 
     errors.add(
       :client_id,
       t('openid_connect.logout.errors.client_id_invalid'),
       type: :client_id_invalid,
+    )
+  end
+
+  # Fail closed: without a registered service provider there are no redirect URIs to
+  # validate post_logout_redirect_uri against.
+  def service_provider_resolved
+    return if service_provider.present? || errors.any?
+
+    errors.add(
+      :id_token_hint, t('openid_connect.logout.errors.id_token_hint'),
+      type: :id_token_hint
     )
   end
 
@@ -169,14 +185,14 @@ class OpenidConnectLogoutForm
   end
 
   def logout_redirect_uri
-    return nil if errors.include?(:redirect_uri)
+    return nil if service_provider.blank? || errors.include?(:redirect_uri)
     return post_logout_redirect_uri unless state.present?
 
     UriService.add_params(post_logout_redirect_uri, state: state)
   end
 
   def error_redirect_uri
-    uri = post_logout_redirect_uri unless errors.include?(:redirect_uri)
+    uri = post_logout_redirect_uri if service_provider.present? && !errors.include?(:redirect_uri)
 
     UriService.add_params(
       uri,

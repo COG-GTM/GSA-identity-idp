@@ -190,6 +190,53 @@ RSpec.describe OpenidConnectLogoutForm do
           end
         end
 
+        context 'with an unregistered client_id and an unverifiable id_token_hint' do
+          let(:client_id) { 'unregistered' }
+          let(:id_token_hint) { 'garbage' }
+          let(:post_logout_redirect_uri) { 'https://attacker.example' }
+
+          it 'is not valid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_id])
+              .to include(t('openid_connect.logout.errors.client_id_invalid'))
+          end
+
+          it 'does not return the unregistered redirect URI' do
+            result = form.submit
+
+            expect(result).to_not be_success
+            expect(result.extra[:redirect_uri].to_s).to_not include('attacker.example')
+          end
+        end
+
+        context 'with an unregistered client_id and a valid id_token_hint' do
+          let(:client_id) { 'unregistered' }
+
+          it 'is not valid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_id])
+              .to include(t('openid_connect.logout.errors.client_id_invalid'))
+          end
+        end
+
+        context 'with a valid id_token_hint for a service provider that is not registered' do
+          let(:service_provider) { 'urn:gov:gsa:openidconnect:unregistered' }
+          let(:post_logout_redirect_uri) { 'https://attacker.example' }
+
+          it 'is not valid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:id_token_hint])
+              .to include(t('openid_connect.logout.errors.id_token_hint'))
+          end
+
+          it 'does not return the unregistered redirect URI' do
+            result = form.submit
+
+            expect(result).to_not be_success
+            expect(result.extra[:redirect_uri].to_s).to_not include('attacker.example')
+          end
+        end
+
         context 'with an expired, but otherwise valid id_token_hint' do
           let(:id_token_hint) do
             IdTokenBuilder.new(
