@@ -405,6 +405,33 @@ RSpec.describe Idv::InPerson::VerifyInfoController do
       allow(user).to receive(:establishing_in_person_enrollment).and_return(enrollment)
     end
 
+    it 'counts the submission against the idv_resolution rate limiter' do
+      expect { put :update }.to change {
+        RateLimiter.new(user:, rate_limit_type: :idv_resolution).attempts
+      }.by(1)
+    end
+
+    context 'when the SSN is changed and verify info resubmitted without viewing results' do
+      let(:max_attempts) { RateLimiter.max_attempts(:idv_resolution) }
+
+      before do
+        allow(IdentityConfig.store).to receive(:proof_ssn_max_attempts).and_return(100)
+        allow(IdentityConfig.store).to receive(:ruby_workers_idv_enabled).and_return(true)
+        allow(ResolutionProofingJob).to receive(:perform_later)
+      end
+
+      it 'enqueues at most idv_max_attempts resolution proofing jobs' do
+        (max_attempts + 3).times do
+          # what Idv::InPerson::SsnController#update does when a new SSN is submitted
+          controller.send(:clear_future_steps_from!, controller: Idv::InPerson::SsnController)
+          put :update
+        end
+
+        expect(ResolutionProofingJob).to have_received(:perform_later).exactly(max_attempts).times
+        expect(response).to redirect_to idv_session_errors_failure_url
+      end
+    end
+
     it 'sets ssn on pii_from_user' do
       expect(Idv::Agent).to receive(:new).with(
         hash_including(

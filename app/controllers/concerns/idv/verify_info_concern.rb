@@ -16,6 +16,8 @@ module Idv
 
     def shared_update
       return if idv_session.verify_info_step_document_capture_session_uuid
+      return false unless count_resolution_attempt
+
       analytics.idv_doc_auth_verify_submitted(**analytics_arguments)
       Funnel::DocAuth::RegisterStep.new(current_user.id, sp_session[:issuer])
         .call('verify', :update, true)
@@ -88,6 +90,23 @@ module Idv
         user: current_user,
         rate_limit_type: :idv_resolution,
       )
+    end
+
+    # Each submission starts billed vendor checks, so it is counted when the job is
+    # started rather than when the result is viewed.
+    def count_resolution_attempt
+      attempts = resolution_rate_limiter.increment!
+      return true if attempts.present? && attempts <= RateLimiter.max_attempts(:idv_resolution)
+
+      if !rate_limit_redirect!(:idv_resolution, step_name: STEP_NAME)
+        rate_limited_redirect(:idv_resolution)
+      end
+      false
+    end
+
+    def refund_resolution_attempt
+      dcs_uuid = idv_session.verify_info_step_document_capture_session_uuid
+      resolution_rate_limiter.refund!(dcs_uuid) if dcs_uuid.present?
     end
 
     def ssn_rate_limiter
@@ -315,7 +334,7 @@ module Idv
 
     def summarize_result_and_rate_limit(summary_result)
       proofing_results_exception = summary_result.extra.dig(:proofing_results, :exception)
-      resolution_rate_limiter.increment! if proofing_results_exception.blank?
+      refund_resolution_attempt if proofing_results_exception.present?
 
       failures = VerificationFailures.new(result: summary_result)
 

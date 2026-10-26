@@ -22,6 +22,14 @@ class RateLimiter
 
   EXPONENTIAL_INCREMENT_SCRIPT_SHA1 = Digest::SHA1.hexdigest(EXPONENTIAL_INCREMENT_SCRIPT).freeze
 
+  REFUND_SCRIPT = <<~LUA
+    local count = tonumber(redis.call('get', KEYS[1]) or '0')
+    if count > 0 and redis.call('set', KEYS[2], '1', 'NX', 'EX', ARGV[1]) then
+      count = redis.call('decr', KEYS[1])
+    end
+    return count
+  LUA
+
   def initialize(rate_limit_type:, user: nil, target: nil)
     @rate_limit_type = rate_limit_type
     @user = user
@@ -124,6 +132,21 @@ class RateLimiter
 
     @redis_attempts = value.to_i
     @redis_attempted_at = now
+
+    attempts
+  end
+
+  # Gives back one attempt, at most once per attempt_id, without changing the expiration.
+  def refund!(attempt_id)
+    value = nil
+    refund_key = "#{key}:refund:#{attempt_id}"
+    refund_marker_ttl = expiration_minutes.minutes.in_seconds.to_i.to_s
+
+    REDIS_THROTTLE_POOL.with do |client|
+      value = client.eval(REFUND_SCRIPT, [key, refund_key], [refund_marker_ttl])
+    end
+
+    @redis_attempts = value.to_i
 
     attempts
   end

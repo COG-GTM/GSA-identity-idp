@@ -186,6 +186,34 @@ RSpec.describe RateLimiter do
     end
   end
 
+  describe '#refund!' do
+    subject(:rate_limiter) { RateLimiter.new(target: 'aaa', rate_limit_type: rate_limit_type) }
+
+    it 'gives back one attempt per attempt id, only once' do
+      2.times { rate_limiter.increment! }
+
+      expect(rate_limiter.refund!('attempt-1')).to eq(1)
+      expect(rate_limiter.refund!('attempt-1')).to eq(1)
+      expect(rate_limiter.refund!('attempt-2')).to eq(0)
+      expect(rate_limiter.fetch_state!.attempts).to eq(0)
+    end
+
+    it 'does not go below zero' do
+      expect(rate_limiter.refund!('attempt-1')).to eq(0)
+      expect(rate_limiter.fetch_state!.attempts).to eq(0)
+    end
+
+    it 'does not change the expiration' do
+      rate_limiter.increment!
+      rate_limiter.increment!
+      expires_at = rate_limiter.fetch_state!.expires_at
+
+      rate_limiter.refund!('attempt-1')
+
+      expect(rate_limiter.fetch_state!.expires_at).to eq(expires_at)
+    end
+  end
+
   describe '#remaining_count' do
     let(:target) { '1' }
     let(:subject) { described_class }
