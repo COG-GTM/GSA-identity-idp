@@ -258,6 +258,45 @@ RSpec.describe Api::Attempts::EventsController do
           end
         end
 
+        context 'when another partner issuer extends the caller issuer with a colon' do
+          let(:other_issuer) { "#{issuer}:loa1" }
+          let(:other_event) do
+            AttemptsApi::AttemptEvent.new(
+              event_type: 'test_event',
+              session_id: 'test-session-id',
+              occurred_at: Time.zone.now,
+              event_metadata: {},
+            )
+          end
+          let(:other_jwe) { other_event.to_jwe(issuer: other_issuer, public_key:) }
+          let(:ack) { [other_event.jti] }
+
+          before do
+            redis_client.write_event(
+              event_key: other_event.jti,
+              jwe: other_jwe,
+              timestamp: Time.zone.now,
+              issuer: other_issuer,
+            )
+          end
+
+          it 'neither returns nor deletes the other partner events' do
+            expect(action.body).to eq({ sets: {} }.to_json)
+            expect(@analytics).to have_logged_event(
+              :attempts_api_poll_events_request,
+              issuer:,
+              requested_events_count: 1000,
+              requested_acknowledged_events_count: 1,
+              returned_events_count: 0,
+              acknowledged_events_count: 0,
+              success: true,
+            )
+            expect(redis_client.read_events(issuer: other_issuer)).to eq(
+              other_event.jti => other_jwe,
+            )
+          end
+        end
+
         context 'with no events in Redis' do
           it 'returns an empty set' do
             expect(redis_client).to receive(:delete_events).and_call_original
