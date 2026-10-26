@@ -8,6 +8,9 @@ module TwoFactorAuthentication
 
     before_action :confirm_piv_cac_enabled, only: :show
     before_action :reset_attempt_count_if_user_no_longer_locked_out, only: :show
+    before_action -> { reserve_second_factor_attempt(type: 'piv_cac') },
+                  only: :show,
+                  if: -> { params[:token] }
 
     def show
       if params[:token]
@@ -45,7 +48,7 @@ module TwoFactorAuthentication
     private
 
     def process_token
-      result = piv_cac_verification_form.submit
+      result = reject_success_if_second_factor_locked(piv_cac_verification_form.submit)
       session[:sign_in_flow] = :sign_in
 
       handle_verification_for_authentication_context(

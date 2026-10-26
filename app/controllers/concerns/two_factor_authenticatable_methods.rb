@@ -140,6 +140,23 @@ module TwoFactorAuthenticatableMethods
     redirect_to after_sign_in_path_for(current_user)
   end
 
+  # Use as a before_action on actions that verify a guessable second-factor code. Rejects locked
+  # users before the code is checked and reserves the attempt up front.
+  def reserve_second_factor_attempt(type:)
+    @second_factor_attempt_reserved = current_user.reserve_second_factor_attempt!
+    return if @second_factor_attempt_reserved
+
+    handle_second_factor_locked_user(type:, context:)
+  end
+
+  # A correct code must not authenticate a user locked out by a concurrent failed attempt.
+  def reject_success_if_second_factor_locked(result)
+    return result unless result.success?
+    return result unless current_user.refresh_second_factor_lockout_state!.locked_out?
+
+    FormResponse.new(success: false, extra: result.extra)
+  end
+
   def reset_attempt_count_if_user_no_longer_locked_out
     return unless current_user.no_longer_locked_out?
 
@@ -230,7 +247,11 @@ module TwoFactorAuthenticatableMethods
   end
 
   def update_invalid_user
-    current_user.increment_second_factor_attempts_count!
+    if @second_factor_attempt_reserved
+      current_user.lock_second_factor_if_attempts_exhausted!
+    else
+      current_user.increment_second_factor_attempts_count!
+    end
   end
 
   def handle_invalid_verification_for_authentication_context

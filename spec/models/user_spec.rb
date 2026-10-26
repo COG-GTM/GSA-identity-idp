@@ -1518,6 +1518,78 @@ RSpec.describe User do
     end
   end
 
+  describe '#reserve_second_factor_attempt!' do
+    let(:max_attempts) { IdentityConfig.store.login_otp_confirmation_max_attempts }
+    let(:user) { create(:user, :fully_registered) }
+
+    it 'increments the attempt count and returns true' do
+      expect(user.reserve_second_factor_attempt!).to eq(true)
+      expect(user.second_factor_attempts_count).to eq(1)
+      expect(user.reload.second_factor_attempts_count).to eq(1)
+      expect(user.second_factor_locked_at).to be_nil
+    end
+
+    it 'grants at most the max attempts to copies of the user loaded before the lockout' do
+      stale_copies = Array.new(max_attempts * 3) { User.find(user.id) }
+
+      reserved = stale_copies.count(&:reserve_second_factor_attempt!)
+
+      expect(reserved).to eq(max_attempts)
+      expect(user.reload.second_factor_attempts_count).to eq(max_attempts)
+      expect(user.locked_out?).to eq(true)
+    end
+
+    context 'when the user is locked out' do
+      let(:user) do
+        create(
+          :user,
+          :fully_registered,
+          second_factor_attempts_count: max_attempts,
+          second_factor_locked_at: Time.zone.now,
+        )
+      end
+
+      it 'returns false without consuming an attempt' do
+        expect(user.reserve_second_factor_attempt!).to eq(false)
+        expect(user.reload.second_factor_attempts_count).to eq(max_attempts)
+      end
+    end
+
+    context 'when attempts are exhausted but the lock timestamp is missing' do
+      let(:user) do
+        create(:user, :fully_registered, second_factor_attempts_count: max_attempts)
+      end
+
+      it 'returns false and locks the user so the lockout can expire' do
+        freeze_time do
+          expect(user.reserve_second_factor_attempt!).to eq(false)
+          expect(user.reload.second_factor_locked_at).to eq(Time.zone.now)
+        end
+      end
+    end
+  end
+
+  describe '#lock_second_factor_if_attempts_exhausted!' do
+    let(:max_attempts) { IdentityConfig.store.login_otp_confirmation_max_attempts }
+
+    it 'locks the user once the reserved attempts reach the max' do
+      user = create(:user, :fully_registered, second_factor_attempts_count: max_attempts)
+
+      user.lock_second_factor_if_attempts_exhausted!
+
+      expect(user.locked_out?).to eq(true)
+      expect(user.reload.locked_out?).to eq(true)
+    end
+
+    it 'does not lock the user below the max' do
+      user = create(:user, :fully_registered, second_factor_attempts_count: max_attempts - 1)
+
+      user.lock_second_factor_if_attempts_exhausted!
+
+      expect(user.reload.second_factor_locked_at).to be_nil
+    end
+  end
+
   describe '#locked_out?' do
     let(:locked_at) { nil }
     let(:user) { User.new }

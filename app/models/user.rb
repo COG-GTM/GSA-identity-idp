@@ -305,13 +305,73 @@ class User < ApplicationRecord
         [sql,
          IdentityConfig.store.login_otp_confirmation_max_attempts, self.id],
       )
-      result = User.connection.execute(query).first
-      self.second_factor_attempts_count = result.fetch('second_factor_attempts_count')
-      self.second_factor_locked_at = result.fetch('second_factor_locked_at')
-      self.clear_attribute_changes([:second_factor_attempts_count, :second_factor_locked_at])
+      assign_second_factor_lockout_state(User.connection.execute(query).first)
     end
 
     nil
+  end
+
+  # Atomically claims one second-factor attempt before a code is checked, so concurrent requests
+  # cannot verify more than login_otp_confirmation_max_attempts codes per lockout window.
+  # Returns false when the user is locked out or has no attempts left.
+  def reserve_second_factor_attempt!
+    sql = <<~SQL
+      UPDATE users
+      SET
+        second_factor_attempts_count = COALESCE(second_factor_attempts_count, 0) + 1,
+        updated_at = NOW()
+      WHERE id = ?
+        AND (second_factor_locked_at IS NULL OR second_factor_locked_at <= ?)
+        AND COALESCE(second_factor_attempts_count, 0) < ?
+      RETURNING second_factor_attempts_count, second_factor_locked_at;
+    SQL
+    query = User.sanitize_sql_array(
+      [sql, self.id, lockout_period.ago, IdentityConfig.store.login_otp_confirmation_max_attempts],
+    )
+    result = User.connection.execute(query).first
+
+    if result
+      assign_second_factor_lockout_state(result)
+      true
+    else
+      lock_second_factor_if_attempts_exhausted!
+      false
+    end
+  end
+
+  # Locks a user whose reserved attempts have reached the limit.
+  def lock_second_factor_if_attempts_exhausted!
+    sql = <<~SQL
+      UPDATE users
+      SET
+        second_factor_locked_at = CASE
+          WHEN second_factor_locked_at IS NULL
+            AND COALESCE(second_factor_attempts_count, 0) >= ?
+          THEN NOW()
+          ELSE second_factor_locked_at
+          END,
+        updated_at = NOW()
+      WHERE id = ?
+      RETURNING second_factor_attempts_count, second_factor_locked_at;
+    SQL
+    query = User.sanitize_sql_array(
+      [sql, IdentityConfig.store.login_otp_confirmation_max_attempts, self.id],
+    )
+    result = User.connection.execute(query).first
+    assign_second_factor_lockout_state(result) if result
+
+    nil
+  end
+
+  def refresh_second_factor_lockout_state!
+    attempts_count, locked_at = User.where(id: self.id)
+      .pick(:second_factor_attempts_count, :second_factor_locked_at)
+    assign_second_factor_lockout_state(
+      'second_factor_attempts_count' => attempts_count,
+      'second_factor_locked_at' => locked_at,
+    )
+
+    self
   end
 
   MINIMUM_LIKELY_ENCRYPTED_DATA_LENGTH = 1000
@@ -568,6 +628,12 @@ class User < ApplicationRecord
 
   def find_active_profile
     profiles.where.not(activated_at: nil).order(activated_at: :desc).first
+  end
+
+  def assign_second_factor_lockout_state(result)
+    self.second_factor_attempts_count = result.fetch('second_factor_attempts_count')
+    self.second_factor_locked_at = result.fetch('second_factor_locked_at')
+    clear_attribute_changes([:second_factor_attempts_count, :second_factor_locked_at])
   end
 
   def lockout_period

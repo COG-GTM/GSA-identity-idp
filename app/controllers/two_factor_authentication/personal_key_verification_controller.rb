@@ -7,6 +7,7 @@ module TwoFactorAuthentication
 
     prepend_before_action :authenticate_user
     before_action :check_personal_key_enabled
+    before_action -> { reserve_second_factor_attempt(type: 'personal_key') }, only: :create
 
     def show
       recaptcha_annotation = annotate_recaptcha(
@@ -19,7 +20,7 @@ module TwoFactorAuthentication
 
     def create
       @personal_key_form = PersonalKeyForm.new(current_user, personal_key_param)
-      result = @personal_key_form.submit
+      result = reject_success_if_second_factor_locked(@personal_key_form.submit)
       handle_result(result)
     end
 

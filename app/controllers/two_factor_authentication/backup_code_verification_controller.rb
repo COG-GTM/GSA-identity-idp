@@ -6,6 +6,7 @@ module TwoFactorAuthentication
     include NewDeviceConcern
 
     prepend_before_action :authenticate_user
+    before_action -> { reserve_second_factor_attempt(type: 'backup_code') }, only: :create
 
     def show
       recaptcha_annotation = annotate_recaptcha(
