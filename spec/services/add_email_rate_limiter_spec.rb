@@ -31,6 +31,15 @@ RSpec.describe AddEmailRateLimiter do
     expect(attempt(email: 'another@example.com')&.rate_limit_type).to eq(:add_email_per_user)
   end
 
+  it 'refuses a send that races past the limit check' do
+    (recipient_max - 1).times { attempt }
+    racing = AddEmailRateLimiter.new(user:, email:)
+    allow_any_instance_of(RateLimiter).to receive(:limited?).and_return(false)
+
+    expect(attempt).to be_nil
+    expect(racing.attempt!&.rate_limit_type).to eq(:add_email_per_recipient)
+  end
+
   it 'does not count a refused attempt against the other limiter' do
     recipient_max.times { attempt }
     attempt

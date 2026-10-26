@@ -9,18 +9,23 @@ class AddEmailRateLimiter
   end
 
   # Records a send unless a limit has been reached. Returns the limiter that blocked the send, or
-  # nil when the email may be sent.
+  # nil when the email may be sent. The decision uses the atomic Redis increment result, so
+  # concurrent requests cannot all slip in under the limit.
   def attempt!
-    limited = rate_limiters.find(&:limited?)
-    return limited if limited
-
-    rate_limiters.each(&:increment!)
+    rate_limiters.each do |rate_limiter|
+      attempts = rate_limiter.increment!
+      return rate_limiter if attempts.nil? || attempts > max_attempts(rate_limiter)
+    end
     nil
   end
 
   private
 
   attr_reader :user, :email
+
+  def max_attempts(rate_limiter)
+    RateLimiter.max_attempts(rate_limiter.rate_limit_type)
+  end
 
   def rate_limiters
     @rate_limiters ||= [
