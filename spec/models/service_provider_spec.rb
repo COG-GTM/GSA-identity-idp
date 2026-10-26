@@ -238,6 +238,39 @@ RSpec.describe ServiceProvider do
     end
   end
 
+  describe '#pkce_allowed?' do
+    subject(:pkce_allowed?) { service_provider.pkce_allowed? }
+
+    let(:service_provider) { build(:service_provider, pkce:, certs:) }
+    let(:certs) { ['saml_test_sp'] }
+
+    context 'when pkce is true' do
+      let(:pkce) { true }
+
+      it { expect(pkce_allowed?).to eq(true) }
+    end
+
+    context 'when pkce is false' do
+      let(:pkce) { false }
+      let(:certs) { [] }
+
+      it { expect(pkce_allowed?).to eq(false) }
+    end
+
+    context 'when pkce is unset and the sp has registered certs' do
+      let(:pkce) { nil }
+
+      it { expect(pkce_allowed?).to eq(false) }
+    end
+
+    context 'when pkce is unset and the sp has no registered certs' do
+      let(:pkce) { nil }
+      let(:certs) { [] }
+
+      it { expect(pkce_allowed?).to eq(true) }
+    end
+  end
+
   describe '#logo_is_email_compatible?' do
     subject { ServiceProvider.new(logo: logo) }
     before do

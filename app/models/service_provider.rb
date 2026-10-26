@@ -60,6 +60,13 @@ class ServiceProvider < ApplicationRecord
     end.compact
   end
 
+  # A nil pkce setting only permits PKCE for clients without registered certs, so the
+  # authorize request cannot downgrade a private_key_jwt client to PKCE.
+  def pkce_allowed?
+    return pkce unless pkce.nil?
+    ssl_certs.empty?
+  end
+
   def encrypt_responses?
     block_encryption != 'none'
   end

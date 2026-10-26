@@ -729,6 +729,10 @@ RSpec.describe OpenidConnectAuthorizeForm do
       let(:code_challenge) { 'abcdef' }
       let(:code_challenge_method) { 'S256' }
 
+      before do
+        ServiceProvider.find_by(issuer: client_id).update!(pkce: true)
+      end
+
       it 'records the code_challenge on the identity' do
         form.link_identity_to_service_provider(
           current_user: user,
@@ -744,6 +748,46 @@ RSpec.describe OpenidConnectAuthorizeForm do
         expect(identity.ial).to eq(1)
         expect(identity.acr_values).to eq ''
         expect(identity.vtr).to eq ['C1'].to_json
+      end
+
+      context 'when the sp has registered certs and pkce is unset' do
+        before do
+          ServiceProvider.find_by(issuer: client_id).update!(pkce: nil)
+        end
+
+        it 'does not record the code_challenge on the identity' do
+          form.link_identity_to_service_provider(
+            current_user: user,
+            ial: 1,
+            rails_session_id: rails_session_id,
+            email_address_id: 4,
+          )
+
+          identity = user.identities.where(service_provider: client_id).first
+
+          expect(form.service_provider.ssl_certs).to be_present
+          expect(identity.code_challenge).to be_nil
+          expect(identity.nonce).to eq(nonce)
+        end
+      end
+
+      context 'when the sp is set for jwt only mode' do
+        before do
+          ServiceProvider.find_by(issuer: client_id).update!(pkce: false)
+        end
+
+        it 'does not record the code_challenge on the identity' do
+          form.link_identity_to_service_provider(
+            current_user: user,
+            ial: 1,
+            rails_session_id: rails_session_id,
+            email_address_id: 4,
+          )
+
+          identity = user.identities.where(service_provider: client_id).first
+
+          expect(identity.code_challenge).to be_nil
+        end
       end
     end
   end

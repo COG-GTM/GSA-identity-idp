@@ -300,10 +300,47 @@ RSpec.describe OpenidConnectTokenForm do
       let(:code_challenge) { Digest::SHA256.urlsafe_base64digest(code_verifier) }
       let(:code_verifier) { SecureRandom.hex }
 
+      let(:service_provider) do
+        create(
+          :service_provider,
+          certs: ['saml_test_sp2', 'saml_test_sp'],
+          pkce: true,
+        )
+      end
+
       context 'with valid params' do
         it 'is true, and has no errors' do
           expect(valid?).to eq(true)
           expect(form.errors).to be_blank
+        end
+
+        context 'when the sp has registered certs and pkce is unset' do
+          let(:service_provider) do
+            create(
+              :service_provider,
+              certs: ['saml_test_sp2', 'saml_test_sp'],
+              pkce: nil,
+            )
+          end
+
+          it 'is false, and requires private_key_jwt client authentication' do
+            expect(identity.code_challenge).to eq(code_challenge)
+
+            expect(valid?).to eq(false)
+            expect(form.errors[:code])
+              .to include(t('openid_connect.token.errors.invalid_authentication'))
+            expect(form.response).to_not have_key(:access_token)
+            expect(form.response).to_not have_key(:id_token)
+          end
+        end
+
+        context 'when the sp has no registered certs and pkce is unset' do
+          let(:service_provider) { create(:service_provider, certs: [], pkce: nil) }
+
+          it 'is true, and has no errors' do
+            expect(valid?).to eq(true)
+            expect(form.errors).to be_blank
+          end
         end
 
         it 'is true, and has no errors if the sp is set for pkce only mode' do
