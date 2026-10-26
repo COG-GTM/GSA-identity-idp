@@ -81,6 +81,17 @@ RSpec.describe RiscDeliveryJob do
       expect(Resolv).to have_received(:getaddresses).with('push.example.gov').once
     end
 
+    it 'does not route pinned connections through an environment proxy' do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with('http_proxy', nil).and_return('http://proxy.internal:3128')
+      destination = PushNotification::UrlPolicy::Destination.new(
+        uri: URI(push_notification_url),
+        ip_address: '93.184.215.14',
+      )
+
+      expect(job.faraday(destination).proxy).to be_nil
+    end
+
     it 'does not follow redirects' do
       stub_request(:post, push_notification_url)
         .to_return(status: 307, headers: { 'Location' => 'http://169.254.169.254/latest' })

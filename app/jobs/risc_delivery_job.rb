@@ -101,6 +101,8 @@ class RiscDeliveryJob < ApplicationJob
 
   def faraday(destination)
     Faraday.new do |f|
+      # A proxy would resolve the hostname itself, bypassing the pinned address
+      f.proxy = nil if destination.ip_address
       f.request :instrumentation, name: 'request_log.faraday'
       f.adapter :net_http do |http|
         http.ipaddr = destination.ip_address if destination.ip_address
