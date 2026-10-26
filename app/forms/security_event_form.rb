@@ -158,7 +158,11 @@ class SecurityEventForm
   end
 
   def validate_iss
-    errors.add(:iss, 'invalid issuer', type: :invalid_issuer) if service_provider.blank?
+    if service_provider.blank?
+      errors.add(:iss, 'invalid issuer', type: :invalid_issuer)
+    elsif !service_provider.active?
+      errors.add(:iss, 'invalid issuer', type: :inactive_issuer)
+    end
   end
 
   def validate_aud
@@ -265,7 +269,7 @@ class SecurityEventForm
   end
 
   def identity
-    return if event.blank? || !service_provider
+    return if event.blank? || !service_provider&.active?
     return @identity if defined?(@identity)
 
     @identity = if service_provider.agency_id
@@ -276,10 +280,19 @@ class SecurityEventForm
   end
 
   def identity_from_agency_identity
-    AgencyIdentity.find_by(
+    agency_identity = AgencyIdentity.find_by(
       uuid: event.dig('subject', 'sub'),
       agency_id: service_provider.agency_id,
     )
+    return if agency_identity.blank?
+
+    # ensure that the user has authenticated to the sending SP, not just a sibling in its agency
+    return unless ServiceProviderIdentity.exists?(
+      user_id: agency_identity.user_id,
+      service_provider: service_provider.issuer,
+    )
+
+    agency_identity
   end
 
   def identity_from_identity
