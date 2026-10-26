@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'csv'
 require 'reporting/api_transaction_count_report'
 
 module Reports
@@ -95,11 +94,7 @@ module Reports
     end
 
     def csv_file(report_array)
-      CSV.generate do |csv|
-        report_array.each do |row|
-          csv << row
-        end
-      end
+      Reporting::CsvFormulaEscaper.generate(report_array)
     end
   end
 end

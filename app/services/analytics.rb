@@ -4,6 +4,8 @@ class Analytics
   include AnalyticsEvents
   prepend Idv::AnalyticsEventsEnhancer
 
+  APP_DIFFERENTIATOR_FORMAT = /\A[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\z/
+
   attr_reader :user, :request, :sp, :session, :ahoy
 
   # @param [User] user
@@ -159,7 +161,8 @@ class Analytics
       sp_request_url = session&.dig(:sp, :request_url)
       return nil if sp_request_url.blank?
 
-      UriService.params(sp_request_url)['login_gov_app_differentiator']
+      value = UriService.params(sp_request_url)['login_gov_app_differentiator']
+      value if value.is_a?(String) && APP_DIFFERENTIATOR_FORMAT.match?(value)
     end
   end
 

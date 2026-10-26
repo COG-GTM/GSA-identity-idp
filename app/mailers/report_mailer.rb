@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require 'csv'
 require 'caxlsx'
+require 'reporting/csv_formula_escaper'
 
 class ReportMailer < ActionMailer::Base
   include Mailable
@@ -50,11 +50,7 @@ class ReportMailer < ActionMailer::Base
       @reports.each do |report|
         filename = "#{report.filename || report.title.parameterize}.csv"
 
-        attachments[filename] = CSV.generate do |csv|
-          report.table.each do |row|
-            csv << row
-          end
-        end
+        attachments[filename] = Reporting::CsvFormulaEscaper.generate(report.table)
       end
     when :xlsx
       Axlsx::Package.new do |package|

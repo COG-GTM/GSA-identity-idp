@@ -2,6 +2,7 @@
 
 require 'reporting/cloudwatch_client'
 require 'reporting/cloudwatch_query_quoting'
+require 'reporting/csv_formula_escaper'
 
 module Reporting
   class SpProofingEventsByUuid
@@ -99,11 +100,7 @@ module Reporting
     end
 
     def to_csv
-      CSV.generate do |csv|
-        as_csv.each do |row|
-          csv << row
-        end
-      end
+      Reporting::CsvFormulaEscaper.generate(as_csv)
     end
 
     def as_emailable_reports

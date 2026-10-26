@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require 'csv'
 begin
   require 'reporting/cloudwatch_client'
   require 'reporting/cloudwatch_query_quoting'
   require 'reporting/command_line_options'
+  require 'reporting/csv_formula_escaper'
 rescue LoadError => e
   warn 'could not load paths, try running with "bundle exec rails runner"'
   raise e
@@ -59,9 +59,7 @@ module Reporting
 
     def to_csvs
       as_emailable_reports.map do |report|
-        CSV.generate do |csv|
-          report.table.each { |row| csv << row }
-        end
+        Reporting::CsvFormulaEscaper.generate(report.table)
       end
     end
 

