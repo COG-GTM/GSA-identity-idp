@@ -53,7 +53,13 @@ class ServiceProviderUpdater
   end
 
   def cleaned_service_provider(service_provider)
-    service_provider.except(*SP_PROTECTED_ATTRIBUTES, *SP_IGNORED_ATTRIBUTES)
+    cleaned = service_provider.except(*SP_PROTECTED_ATTRIBUTES, *SP_IGNORED_ATTRIBUTES)
+    push_url = cleaned['push_notification_url']
+    if push_url.present? && !PushNotification::UrlPolicy.new(push_url).statically_valid?
+      log_error "Ignoring disallowed push_notification_url for #{cleaned['issuer']}"
+      cleaned['push_notification_url'] = nil
+    end
+    cleaned
   end
 
   def url

@@ -17,6 +17,11 @@ RSpec.describe 'Account Reset Request: Delete Account', email: true do
     )
   end
 
+  before do
+    allow(IdentityConfig.store).to receive(:risc_notifications_allow_internal_urls)
+      .and_return(true)
+  end
+
   context 'as an IAL1 user' do
     it 'allows the user to delete their account after 24 hours' do
       signin(user_email, user.password)

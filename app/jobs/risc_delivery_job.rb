@@ -52,8 +52,10 @@ class RiscDeliveryJob < ApplicationJob
     now: Time.zone.now,
     user: nil
   )
+    destination = PushNotification::UrlPolicy.new(push_notification_url).destination!
+
     response = rate_limiter(push_notification_url).attempt!(now) do
-      faraday.post(
+      faraday(destination).post(
         push_notification_url,
         jwt,
         'Accept' => 'application/json',
@@ -73,7 +75,15 @@ class RiscDeliveryJob < ApplicationJob
       success: response.success?,
       user:,
     )
-  rescue *NETWORK_ERRORS => e
+  rescue PushNotification::UrlPolicy::DisallowedUrlError => e
+    track_event(
+      error: "disallowed_push_notification_url: #{e.message}",
+      event_type:,
+      issuer:,
+      success: false,
+      user:,
+    )
+  rescue PushNotification::UrlPolicy::UnresolvableHostError, *NETWORK_ERRORS => e
     raise DeliveryError.new(e.message)
   end
 
@@ -89,10 +99,14 @@ class RiscDeliveryJob < ApplicationJob
     )
   end
 
-  def faraday
-    @faraday ||= Faraday.new do |f|
+  def faraday(destination)
+    Faraday.new do |f|
+      # A proxy would resolve the hostname itself, bypassing the pinned address
+      f.proxy = nil if destination.ip_address
       f.request :instrumentation, name: 'request_log.faraday'
-      f.adapter :net_http
+      f.adapter :net_http do |http|
+        http.ipaddr = destination.ip_address if destination.ip_address
+      end
       f.options.timeout = IdentityConfig.store.risc_notifications_request_timeout
     end
   end

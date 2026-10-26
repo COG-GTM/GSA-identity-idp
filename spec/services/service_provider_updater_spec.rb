@@ -298,6 +298,63 @@ RSpec.describe ServiceProviderUpdater do
           expect(destroyed_sp).to be nil
         end
       end
+
+      context 'push_notification_url' do
+        before { attributes[:push_notification_url] = push_notification_url }
+
+        context 'with a public https URL' do
+          let(:push_notification_url) { 'https://push.example.gov/risc' }
+
+          it 'saves the push_notification_url' do
+            subject.run(attributes)
+
+            sp = ServiceProvider.find_by(issuer: attributes[:issuer])
+            expect(sp.push_notification_url).to eq push_notification_url
+          end
+        end
+
+        [
+          'http://push.example.gov/risc',
+          'https://169.254.169.254/latest/meta-data',
+          'https://127.0.0.1:6379/',
+          'https://[::1]/push',
+          'https://10.1.2.3/push',
+          'https://localhost/push',
+          'https://user:pass@push.example.gov/risc',
+          'javascript:alert(1)',
+        ].each do |url|
+          context "with a disallowed URL (#{url})" do
+            let(:push_notification_url) { url }
+
+            it 'saves the service provider without the push_notification_url' do
+              expect(Rails.logger).to receive(:error)
+                .with("Ignoring disallowed push_notification_url for #{attributes[:issuer]}")
+
+              subject.run(attributes)
+
+              sp = ServiceProvider.find_by(issuer: attributes[:issuer])
+              expect(sp.friendly_name).to eq friendly_name
+              expect(sp.push_notification_url).to be_nil
+            end
+          end
+        end
+
+        context 'when internal push URLs are allowed' do
+          let(:push_notification_url) { 'http://localhost:3001/api/security_events' }
+
+          before do
+            allow(IdentityConfig.store).to receive(:risc_notifications_allow_internal_urls)
+              .and_return(true)
+          end
+
+          it 'saves the push_notification_url' do
+            subject.run(attributes)
+
+            sp = ServiceProvider.find_by(issuer: attributes[:issuer])
+            expect(sp.push_notification_url).to eq push_notification_url
+          end
+        end
+      end
     end
   end
 end
