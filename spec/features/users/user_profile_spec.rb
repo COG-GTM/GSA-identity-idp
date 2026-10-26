@@ -24,6 +24,11 @@ RSpec.feature 'User profile' do
   context 'ial1 user clicks the delete account button' do
     let(:push_notification_url) { 'http://localhost/push_notifications' }
 
+    before do
+      allow(IdentityConfig.store).to receive(:risc_notifications_allow_internal_urls)
+        .and_return(true)
+    end
+
     it 'deletes the account and signs the user out with a flash message' do
       user = sign_in_and_2fa_user
       user.agency_identities << AgencyIdentity.create(user_id: user.id, agency_id: 1, uuid: '1234')

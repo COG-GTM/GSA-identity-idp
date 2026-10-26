@@ -35,9 +35,14 @@ RSpec.describe RiscDeliveryJob do
       )
     end
 
+    let(:resolved_addresses) { ['93.184.215.14'] }
+
     before do
       allow(job).to receive(:analytics).and_return(job_analytics)
       ActiveJob::Base.queue_adapter = :test
+      allow(Resolv).to receive(:getaddresses).and_call_original
+      allow(Resolv).to receive(:getaddresses).with('push.example.gov')
+        .and_return(resolved_addresses)
     end
 
     it 'POSTs the jwt to the given URL' do
@@ -60,6 +65,131 @@ RSpec.describe RiscDeliveryJob do
           status: 200,
         ),
       )
+    end
+
+    it 'connects to the IP address that was checked' do
+      req = stub_request(:post, push_notification_url)
+      pinned_addresses = []
+      allow_any_instance_of(Net::HTTP).to receive(:ipaddr=) do |_http, address|
+        pinned_addresses << address
+      end
+
+      perform
+
+      expect(req).to have_been_requested
+      expect(pinned_addresses).to eq(['93.184.215.14'])
+      expect(Resolv).to have_received(:getaddresses).with('push.example.gov').once
+    end
+
+    it 'does not follow redirects' do
+      stub_request(:post, push_notification_url)
+        .to_return(status: 307, headers: { 'Location' => 'http://169.254.169.254/latest' })
+      internal_req = stub_request(:any, 'http://169.254.169.254/latest')
+
+      perform
+
+      expect(internal_req).not_to have_been_requested
+      expect(job_analytics).to have_logged_event(
+        :risc_security_event_pushed,
+        risc_event_payload.merge(error: 'http_push_error', status: 307),
+      )
+    end
+
+    context 'with a push_notification_url that is not allowed' do
+      [
+        'http://169.254.169.254/latest',
+        'http://127.0.0.1:6379',
+        'https://169.254.169.254/latest',
+        'https://127.0.0.1:6379',
+        'https://[::1]/push',
+        'https://[::ffff:10.0.0.1]/push',
+        'https://localhost/push',
+        'http://push.example.gov',
+        'https://user:pass@push.example.gov',
+        'ftp://push.example.gov',
+        'not a url',
+      ].each do |url|
+        context url do
+          let(:push_notification_url) { url }
+
+          it 'does not make a request and logs a failure without retrying' do
+            expect(Faraday).not_to receive(:new)
+
+            expect { perform }.not_to raise_error
+
+            expect(a_request(:any, /.*/)).not_to have_been_made
+            expect(job_analytics).to have_logged_event(
+              :risc_security_event_pushed,
+              risc_event_payload.merge(
+                error: start_with('disallowed_push_notification_url'),
+              ),
+            )
+          end
+        end
+      end
+
+      context 'with an https URL whose host resolves to a private address' do
+        let(:resolved_addresses) { ['10.0.0.1'] }
+
+        it 'does not make a request and logs a failure' do
+          expect { perform }.not_to raise_error
+
+          expect(a_request(:any, /.*/)).not_to have_been_made
+          expect(job_analytics).to have_logged_event(
+            :risc_security_event_pushed,
+            risc_event_payload.merge(
+              error: 'disallowed_push_notification_url: address is not publicly routable',
+            ),
+          )
+        end
+      end
+
+      context 'with an https URL whose host resolves to a public and a private address' do
+        let(:resolved_addresses) { ['93.184.215.14', '169.254.169.254'] }
+
+        it 'does not make a request' do
+          perform
+
+          expect(a_request(:any, /.*/)).not_to have_been_made
+          expect(job_analytics).to have_logged_event(
+            :risc_security_event_pushed,
+            risc_event_payload.merge(error: start_with('disallowed_push_notification_url')),
+          )
+        end
+      end
+    end
+
+    context 'when the host does not resolve' do
+      let(:resolved_addresses) { [] }
+
+      it 'raises a retryable delivery error without making a request' do
+        expect { perform }.to raise_error(
+          RiscDeliveryJob::DeliveryError,
+          'could not resolve push.example.gov',
+        )
+        expect(a_request(:any, /.*/)).not_to have_been_made
+      end
+    end
+
+    context 'when internal push URLs are allowed' do
+      let(:push_notification_url) { 'http://localhost:9292/api/push_notifications' }
+
+      before do
+        allow(IdentityConfig.store).to receive(:risc_notifications_allow_internal_urls)
+          .and_return(true)
+      end
+
+      it 'POSTs the jwt to the URL' do
+        req = stub_request(:post, push_notification_url)
+
+        perform
+
+        expect(req).to have_been_requested
+        expect(job_analytics).to have_logged_event(
+          :risc_security_event_pushed,
+          risc_event_payload.merge(success: true, status: 200),
+        )
+      end
     end
 
     context 'when the job fails due to a Faraday::SSLError' do
