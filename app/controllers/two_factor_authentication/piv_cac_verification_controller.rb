@@ -10,7 +10,7 @@ module TwoFactorAuthentication
     before_action :reset_attempt_count_if_user_no_longer_locked_out, only: :show
     before_action -> { reserve_second_factor_attempt(type: 'piv_cac') },
                   only: :show,
-                  if: -> { params[:token].present? }
+                  if: -> { params[:token] }
 
     def show
       if params[:token]

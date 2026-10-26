@@ -89,6 +89,27 @@ RSpec.describe BackupCodeGenerator do
       let(:code) { generator.delete_and_regenerate.sample }
 
       it { is_expected.to be_instance_of(Time) }
+
+      context 'when the user is locked out of second-factor attempts' do
+        before { user.update!(second_factor_locked_at: Time.zone.now) }
+
+        it 'does not consume the code' do
+          expect(result).to eq(nil)
+
+          user.update!(second_factor_locked_at: nil)
+          expect(generator.if_valid_consume_code_return_config_created_at(code))
+            .to be_instance_of(Time)
+        end
+      end
+
+      context 'when the lockout period has expired' do
+        before do
+          lockout_minutes = IdentityConfig.store.lockout_period_in_minutes
+          user.update!(second_factor_locked_at: (lockout_minutes + 1).minutes.ago)
+        end
+
+        it { is_expected.to be_instance_of(Time) }
+      end
     end
   end
 end

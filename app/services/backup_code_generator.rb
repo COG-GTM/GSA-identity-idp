@@ -38,10 +38,19 @@ class BackupCodeGenerator
         SET
           used_at = NOW()
         WHERE user_id = ? AND salted_code_fingerprint IN (?) AND used_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = ?
+              AND (
+                users.second_factor_locked_at IS NULL
+                OR users.second_factor_locked_at <= ?
+              )
+            FOR SHARE
+          )
         RETURNING created_at;
       SQL
       query = BackupCodeConfiguration.sanitize_sql_array(
-        [sql, @user.id, salted_fingerprints],
+        [sql, @user.id, salted_fingerprints, @user.id, lockout_cutoff],
       )
       BackupCodeConfiguration.connection.execute(query).first
     end
@@ -50,6 +59,12 @@ class BackupCodeGenerator
   end
 
   private
+
+  # A code is not consumed while the user is locked out of second-factor attempts, so a
+  # concurrent lockout cannot burn a recovery code without signing the user in.
+  def lockout_cutoff
+    IdentityConfig.store.lockout_period_in_minutes.minutes.ago
+  end
 
   def generate_new_codes
     while result.length < NUMBER_OF_CODES

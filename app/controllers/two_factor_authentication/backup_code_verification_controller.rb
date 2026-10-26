@@ -24,9 +24,7 @@ module TwoFactorAuthentication
 
     def create
       @backup_code_form = BackupCodeVerificationForm.new(user: current_user, request:)
-      result = reject_success_if_second_factor_locked(
-        @backup_code_form.submit(backup_code_params),
-      )
+      result = @backup_code_form.submit(backup_code_params)
       handle_result(result)
     end
 
