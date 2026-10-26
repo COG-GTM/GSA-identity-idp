@@ -508,6 +508,78 @@ RSpec.describe OpenidConnect::LogoutController do
       it_behaves_like 'when allowing id_token_hint', :show, 'GET'
     end
 
+    context 'with an unregistered client_id and an unverifiable id_token_hint' do
+      let(:attacker_uri) { 'https://attacker.example' }
+
+      subject(:action) do
+        get :show,
+            params: {
+              client_id: 'unregistered',
+              id_token_hint: 'garbage',
+              post_logout_redirect_uri: attacker_uri,
+              state: state,
+            }
+      end
+
+      before do
+        allow(IdentityConfig.store).to receive(:openid_connect_redirect)
+          .and_return('server_side')
+      end
+
+      context 'user is not signed in' do
+        it 'renders the error page instead of redirecting' do
+          stub_analytics
+
+          action
+
+          expect(response).to render_template(:error)
+          expect(response).to_not be_redirect
+          expect(@analytics).to have_logged_event(
+            'OIDC Logout Requested',
+            hash_including(
+              success: false,
+              error_details: hash_including(client_id: { client_id_invalid: true }),
+            ),
+          )
+        end
+      end
+
+      context 'user is signed in' do
+        before { stub_sign_in(user) }
+
+        it 'renders the error page without signing out' do
+          expect(controller).to_not receive(:sign_out)
+
+          action
+
+          expect(response).to render_template(:error)
+        end
+      end
+
+      context 'when submitting the logout confirmation' do
+        subject(:action) do
+          delete :delete,
+                 params: {
+                   client_id: 'unregistered',
+                   id_token_hint: 'garbage',
+                   post_logout_redirect_uri: attacker_uri,
+                   state: state,
+                 }
+        end
+
+        before { stub_sign_in(create(:user)) }
+
+        it 'renders the error page instead of redirecting' do
+          expect(controller).to_not receive(:sign_out)
+
+          action
+
+          expect(response).to render_template(:error)
+          expect(response).to_not be_redirect
+        end
+      end
+    end
+
     describe '#delete' do
       context 'when sending client_id' do
         subject(:action) do
