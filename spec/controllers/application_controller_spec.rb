@@ -612,6 +612,22 @@ RSpec.describe ApplicationController do
       end
     end
 
+    context 'with a backslash request url' do
+      let(:sp_session_request_url) { '/\\evil.example/openid_connect/authorize' }
+
+      it 'returns nil' do
+        expect(url_with_updated_params).to be_nil
+      end
+    end
+
+    context 'with a request url containing a tab' do
+      let(:sp_session_request_url) { "/\t/evil.example/openid_connect/authorize" }
+
+      it 'returns nil' do
+        expect(url_with_updated_params).to be_nil
+      end
+    end
+
     context 'with a request url on the IdP host but a different port' do
       let(:sp_session_request_url) do
         "http://#{IdentityConfig.store.domain_name}:8443/openid_connect/authorize"

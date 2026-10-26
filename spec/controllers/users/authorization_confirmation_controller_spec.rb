@@ -40,6 +40,16 @@ RSpec.describe Users::AuthorizationConfirmationController do
         'Authentication Confirmation: Continue selected',
       )
     end
+
+    context 'when the sp request url is on a foreign host' do
+      let(:sp_request_url) { 'https://evil.example/openid_connect/authorize' }
+
+      it 'redirects to the account page' do
+        post :create
+
+        expect(response).to redirect_to(account_url)
+      end
+    end
   end
 
   describe '#destroy' do

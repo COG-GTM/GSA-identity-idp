@@ -274,7 +274,8 @@ class ApplicationController < ActionController::Base
     return login_piv_cac_recommended_path if user_recommended_for_piv_cac?
     return second_mfa_reminder_url if user_needs_second_mfa_reminder?
     return backup_code_reminder_url if user_needs_backup_code_reminder?
-    return sp_session_request_url_with_updated_params if sp_session.key?(:request_url)
+    sp_url = sp_session_request_url_with_updated_params if sp_session.key?(:request_url)
+    return sp_url if sp_url.present?
     signed_in_url
   end
 
@@ -492,8 +493,11 @@ class ApplicationController < ActionController::Base
   # The stored SP request URL must point back at this IdP; a foreign host means it was built
   # from a spoofed Host header and must not be used as a redirect target.
   def idp_hosted_url?(url)
-    uri = URI.parse(url.to_s)
-    return uri.scheme.nil? if uri.host.blank?
+    url = url.to_s
+    # Browsers read "\\" as "/" and drop tabs/newlines, so "/\\evil" would act like "//evil"
+    return false if url.match?(/[\\[:cntrl:][:space:]]/)
+    uri = URI.parse(url)
+    return uri.scheme.nil? && url.start_with?('/') && !url.start_with?('//') if uri.host.blank?
     return false unless %w[http https].include?(uri.scheme)
     authority = uri.port == uri.default_port ? uri.host : "#{uri.host}:#{uri.port}"
     authority.casecmp?(IdentityConfig.store.domain_name)
