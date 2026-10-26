@@ -117,6 +117,15 @@ RSpec.describe OtpRateLimiter do
 
         expect(otp_rate_limiter.rate_limiter.attempts).to eq(1)
       end
+
+      it 'does not clear a lockout set by a concurrent request after this user was loaded' do
+        User.where(id: current_user.id).update_all(second_factor_locked_at: Time.zone.now)
+
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(true)
+        expect(current_user.reload.second_factor_locked_at).to be_present
+      end
     end
   end
 
