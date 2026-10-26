@@ -398,10 +398,39 @@ RSpec.describe Users::TwoFactorAuthenticationController do
                 user: @user, phone_confirmed: true)
           .and_return(otp_rate_limiter)
 
+        expect(otp_rate_limiter).to receive(:reset_count_if_user_no_longer_locked_out)
         expect(otp_rate_limiter).to receive(:exceeded_otp_send_limit?).twice
         expect(otp_rate_limiter).to receive(:increment)
 
         get :send_code, params: otp_delivery_form_sms
+      end
+
+      context 'when a previous OTP send lockout has expired' do
+        before do
+          @user.update!(
+            second_factor_locked_at: (IdentityConfig.store.lockout_period_in_minutes + 10)
+              .minutes.ago,
+            second_factor_attempts_count: 3,
+          )
+        end
+
+        it 'clears the lockout on the first send so later sends are still rate limited' do
+          get :send_code, params: otp_delivery_form_sms
+
+          expect(@user.reload.second_factor_locked_at).to be_nil
+          expect(@user.second_factor_attempts_count).to eq(0)
+
+          freeze_time do
+            IdentityConfig.store.otp_delivery_blocklist_maxretry.times do
+              get :send_code, params: otp_delivery_form_sms
+            end
+
+            expect(@user.reload.second_factor_locked_at).to eq(Time.zone.now)
+          end
+
+          expect(Telephony).to have_received(:send_authentication_otp)
+            .exactly(IdentityConfig.store.otp_delivery_blocklist_maxretry).times
+        end
       end
 
       it 'marks the user as locked out after too many attempts' do

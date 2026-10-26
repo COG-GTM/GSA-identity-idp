@@ -121,6 +121,34 @@ RSpec.describe Idv::SendPhoneConfirmationOtp do
     end
   end
 
+  describe 'when a previous OTP send lockout has expired' do
+    let(:max_sends) { IdentityConfig.store.otp_delivery_blocklist_maxretry }
+
+    before do
+      allow(otp_rate_limiter).to receive(:exceeded_otp_send_limit?).and_call_original
+      user.update!(
+        second_factor_locked_at: (IdentityConfig.store.lockout_period_in_minutes + 10).minutes.ago,
+        second_factor_attempts_count: 3,
+      )
+    end
+
+    it 'clears the lockout on the first send so later sends are still rate limited' do
+      expect(described_class.new(user:, idv_session:).call.success?).to eq(true)
+      expect(user.reload.second_factor_locked_at).to be_nil
+      expect(user.second_factor_attempts_count).to eq(0)
+
+      (max_sends - 1).times do
+        expect(described_class.new(user:, idv_session:).call.success?).to eq(true)
+      end
+
+      service = described_class.new(user:, idv_session:)
+      expect(Telephony).not_to receive(:send_confirmation_otp)
+      expect(service.call.success?).to eq(false)
+      expect(service.user_locked_out?).to eq(true)
+      expect(user.reload.second_factor_locked_at).to be_present
+    end
+  end
+
   describe '#user_locked_out?' do
     before do
       allow(otp_rate_limiter).to receive(:exceeded_otp_send_limit?)

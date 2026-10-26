@@ -66,6 +66,81 @@ RSpec.describe OtpRateLimiter do
     end
   end
 
+  describe '#reset_count_if_user_no_longer_locked_out' do
+    let(:current_user) { create(:user, :with_phone) }
+
+    before do
+      (IdentityConfig.store.otp_delivery_blocklist_maxretry + 1).times do
+        otp_rate_limiter.increment
+      end
+    end
+
+    context 'when the user was never locked out' do
+      it 'keeps the send count' do
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(true)
+      end
+    end
+
+    context 'when the user is still locked out' do
+      before { current_user.update!(second_factor_locked_at: Time.zone.now) }
+
+      it 'keeps the send count and the lockout' do
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(true)
+        expect(current_user.reload.second_factor_locked_at).to be_present
+      end
+    end
+
+    context 'when the lockout has expired' do
+      before do
+        current_user.update!(
+          second_factor_locked_at: (IdentityConfig.store.lockout_period_in_minutes + 1).minutes.ago,
+          second_factor_attempts_count: 3,
+        )
+      end
+
+      it 'resets the send count and clears the lockout' do
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(false)
+        expect(current_user.reload.second_factor_locked_at).to be_nil
+        expect(current_user.second_factor_attempts_count).to eq(0)
+      end
+
+      it 'only resets the send count once per lockout' do
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+        otp_rate_limiter.increment
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.rate_limiter.attempts).to eq(1)
+      end
+
+      it 'does not clear a lockout set by a concurrent request after this user was loaded' do
+        User.where(id: current_user.id).update_all(second_factor_locked_at: Time.zone.now)
+
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(true)
+        expect(current_user.reload.second_factor_locked_at).to be_present
+      end
+
+      it 'does not clear a newer expired lockout than the one this user was loaded with' do
+        newer_locked_at = (IdentityConfig.store.lockout_period_in_minutes.minutes + 30.seconds).ago
+        User.where(id: current_user.id).update_all(second_factor_locked_at: newer_locked_at)
+
+        expect(current_user.clear_expired_second_factor_lockout!).to eq(false)
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(true)
+        expect(current_user.reload.second_factor_locked_at)
+          .to be_within(1.second).of(newer_locked_at)
+      end
+    end
+  end
+
   describe '#lock_out_user' do
     it 'sets the second_factor_locked_at' do
       expect(current_user.second_factor_locked_at).to be_nil

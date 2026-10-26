@@ -286,6 +286,25 @@ class User < ApplicationRecord
     nil
   end
 
+  # Atomically clears the expired lockout this record was loaded with; returns false if another
+  # request already cleared it or the user was locked out again since this record was loaded.
+  def clear_expired_second_factor_lockout!
+    return false unless no_longer_locked_out?
+
+    cleared = User.where(id: id, second_factor_locked_at: second_factor_locked_at)
+      .update_all(
+        second_factor_attempts_count: 0,
+        second_factor_locked_at: nil,
+        updated_at: Time.zone.now,
+      )
+    return false if cleared.zero?
+
+    self.second_factor_attempts_count = 0
+    self.second_factor_locked_at = nil
+    clear_attribute_changes([:second_factor_attempts_count, :second_factor_locked_at])
+    true
+  end
+
   def increment_second_factor_attempts_count!
     User.transaction do
       sql = <<~SQL
