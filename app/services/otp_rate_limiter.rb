@@ -28,6 +28,14 @@ class OtpRateLimiter
     rate_limiter.reset!
   end
 
+  # Clears the expired lockout together with the counter so the reset happens once per lockout.
+  def reset_count_if_user_no_longer_locked_out
+    return unless user.no_longer_locked_out?
+
+    user.update!(second_factor_attempts_count: 0, second_factor_locked_at: nil)
+    reset_count_and_otp_last_sent_at
+  end
+
   def lock_out_user
     user.update!(second_factor_locked_at: Time.zone.now)
   end

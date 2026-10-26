@@ -10,7 +10,7 @@ module Idv
     end
 
     def call
-      otp_rate_limiter.reset_count_and_otp_last_sent_at if user.no_longer_locked_out?
+      otp_rate_limiter.reset_count_if_user_no_longer_locked_out
 
       # The pattern for checking the rate limiter, incrementing, then checking again was introduced
       # in this change: https://github.com/18F/identity-idp/pull/2216
