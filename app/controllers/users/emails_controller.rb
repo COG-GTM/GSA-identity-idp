@@ -3,6 +3,7 @@
 module Users
   class EmailsController < ApplicationController
     include ReauthenticationRequiredConcern
+    include ActionView::Helpers::DateHelper
 
     before_action :confirm_two_factor_authenticated
     before_action :authorize_user_to_edit_email, except: %i[add show verify resend]
@@ -25,6 +26,7 @@ module Users
         current_user, permitted_params.merge(request_id:)
       )
       analytics.add_email_request(**result)
+      log_rate_limit_reached(@add_user_email_form.rate_limiter)
 
       if result.success?
         process_successful_creation
@@ -40,9 +42,17 @@ module Users
       email_address = EmailAddress.where(user_id: current_user.id).find_with_email(session_email)
 
       if email_address && !email_address.confirmed?
-        analytics.resend_add_email_request(success: true)
-        SendAddEmailConfirmation.new(current_user).call(email_address:, request_id:)
-        flash[:success] = t('notices.resend_confirmation_email.success')
+        rate_limiter = AddEmailRateLimiter.new(user: current_user, email: email_address.email)
+          .attempt!
+        if rate_limiter
+          analytics.resend_add_email_request(success: false)
+          log_rate_limit_reached(rate_limiter)
+          flash[:error] = rate_limited_message(rate_limiter)
+        else
+          analytics.resend_add_email_request(success: true)
+          SendAddEmailConfirmation.new(current_user).call(email_address:, request_id:)
+          flash[:success] = t('notices.resend_confirmation_email.success')
+        end
         redirect_to add_email_verify_email_url(in_select_email_flow: in_select_email_flow_param)
       else
         analytics.resend_add_email_request(success: false)
@@ -129,6 +139,21 @@ module Users
 
     def permitted_params
       params.require(:user).permit(:email, :request_id)
+    end
+
+    def log_rate_limit_reached(rate_limiter)
+      return if rate_limiter.blank?
+      analytics.rate_limit_reached(limiter_type: rate_limiter.rate_limit_type)
+    end
+
+    def rate_limited_message(rate_limiter)
+      t(
+        'errors.messages.phone_confirmation_limited',
+        timeout: distance_of_time_in_words(
+          Time.zone.now,
+          [rate_limiter.expires_at, Time.zone.now].compact.max,
+        ),
+      )
     end
 
     def check_max_emails_per_account

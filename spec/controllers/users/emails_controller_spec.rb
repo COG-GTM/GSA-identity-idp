@@ -70,6 +70,29 @@ RSpec.describe Users::EmailsController do
       )
     end
 
+    context 'when the add email rate limit is reached' do
+      before do
+        IdentityConfig.store.add_email_per_recipient_max_attempts.times do
+          AddEmailRateLimiter.new(user: create(:user), email:).attempt!
+        end
+      end
+
+      it 'renders the form with an error, sends nothing and logs the rate limit' do
+        stub_analytics
+
+        expect(response).to render_template(:show)
+        expect(ActionMailer::Base.deliveries).to be_empty
+        expect(@analytics).to have_logged_event(
+          'Add Email Requested',
+          hash_including(success: false),
+        )
+        expect(@analytics).to have_logged_event(
+          'Rate Limit Reached',
+          limiter_type: 'add_email_per_recipient',
+        )
+      end
+    end
+
     context 'when adding through partner email selection flow' do
       before do
         controller.session[:in_select_email_flow] = true
@@ -247,6 +270,31 @@ RSpec.describe Users::EmailsController do
 
       it 'includes select email parameter in redirect url' do
         expect(response).to redirect_to add_email_verify_email_url(in_select_email_flow: true)
+      end
+    end
+
+    context 'when resent more times than the rate limit allows' do
+      let(:max) { IdentityConfig.store.add_email_per_recipient_max_attempts }
+
+      it 'only delivers up to the limit and refuses later requests' do
+        (max + 3).times do
+          post :resend, params: params
+          expect(response).to redirect_to(add_email_verify_email_url)
+        end
+
+        expect(ActionMailer::Base.deliveries.count).to eq max
+        expected_message = t('errors.messages.phone_confirmation_limited', timeout: 'TIMEOUT')
+        expect(flash[:error]).to match(
+          /\A#{Regexp.escape(expected_message).sub('TIMEOUT', '.+')}\z/,
+        )
+        expect(@analytics).to have_logged_event(
+          'Resend Add Email Requested',
+          success: false,
+        )
+        expect(@analytics).to have_logged_event(
+          'Rate Limit Reached',
+          limiter_type: 'add_email_per_recipient',
+        )
       end
     end
 
