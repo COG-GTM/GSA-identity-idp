@@ -104,11 +104,6 @@ module Idv
       false
     end
 
-    def refund_resolution_attempt
-      dcs_uuid = idv_session.verify_info_step_document_capture_session_uuid
-      resolution_rate_limiter.refund!(dcs_uuid) if dcs_uuid.present?
-    end
-
     def ssn_rate_limiter
       @ssn_rate_limiter ||= RateLimiter.new(
         target: Pii::Fingerprinter.fingerprint(idv_session.ssn),
@@ -333,9 +328,6 @@ module Idv
     end
 
     def summarize_result_and_rate_limit(summary_result)
-      proofing_results_exception = summary_result.extra.dig(:proofing_results, :exception)
-      refund_resolution_attempt if proofing_results_exception.present?
-
       failures = VerificationFailures.new(result: summary_result)
 
       log_verification_attempt(

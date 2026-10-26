@@ -508,6 +508,18 @@ RSpec.describe ResolutionProofingJob, type: :job do
       end
     end
 
+    context 'with a successful result' do
+      it 'does not refund the resolution attempt' do
+        stub_vendor_requests
+        resolution_rate_limiter = RateLimiter.new(user:, rate_limit_type: :idv_resolution)
+        resolution_rate_limiter.increment!
+
+        perform
+
+        expect(resolution_rate_limiter.fetch_state!.attempts).to eq(1)
+      end
+    end
+
     context 'with an invalid threatmetrix review_status value' do
       it 'stores an exception result' do
         stub_vendor_requests(
@@ -529,6 +541,19 @@ RSpec.describe ResolutionProofingJob, type: :job do
         expect(result_context_stages_threatmetrix[:exception]).to include(
           LexisNexisFixtures.ddp_unexpected_review_status,
         )
+      end
+
+      it 'refunds the resolution attempt counted at submission, once' do
+        stub_vendor_requests(
+          threatmetrix_response: LexisNexisFixtures.ddp_unexpected_review_status_response_json,
+        )
+        resolution_rate_limiter = RateLimiter.new(user:, rate_limit_type: :idv_resolution)
+        2.times { resolution_rate_limiter.increment! }
+
+        perform
+        perform
+
+        expect(resolution_rate_limiter.fetch_state!.attempts).to eq(1)
       end
     end
 

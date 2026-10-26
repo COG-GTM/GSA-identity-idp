@@ -881,15 +881,6 @@ RSpec.describe Idv::VerifyInfoController do
         let(:success) { false }
         let(:exception) { Proofing::Aamva::VerificationError.new('ExceptionId: 0001') }
 
-        it 'refunds the resolution attempt counted at submission' do
-          resolution_rate_limiter = RateLimiter.new(user:, rate_limit_type: :idv_resolution)
-          resolution_rate_limiter.increment!
-
-          get :show
-
-          expect(resolution_rate_limiter.fetch_state!.attempts).to eq(0)
-        end
-
         it 'tracks the event for the attempts api' do
           expect(@attempts_api_tracker).to receive(:idv_verification_submitted).with(
             success: false,
