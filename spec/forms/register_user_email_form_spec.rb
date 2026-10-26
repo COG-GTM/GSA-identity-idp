@@ -229,6 +229,54 @@ RSpec.describe RegisterUserEmailForm do
       end
     end
 
+    context 'with plus-addressed variants on a non-Google domain' do
+      let(:rate_limit) { IdentityConfig.store.reg_unconfirmed_email_max_attempts }
+
+      it 'shares one rate limit across +tags and letter case' do
+        1.upto(rate_limit) do |i|
+          local = i.even? ? 'USER' : 'user'
+          response = RegisterUserEmailForm.new(analytics:, attempts_api_tracker:)
+            .submit(email: "#{local}+#{i}@example.com", terms_accepted: '1')
+          expect(response.extra[:rate_limited]).to eq(false)
+        end
+
+        expect(attempts_api_tracker).to receive(
+          :user_registration_email_submission_rate_limited,
+        ).with(
+          email: "user+#{rate_limit + 1}@example.com",
+          email_already_registered: false,
+        )
+
+        form = RegisterUserEmailForm.new(analytics:, attempts_api_tracker:)
+        response = form.submit(email: "user+#{rate_limit + 1}@example.com", terms_accepted: '1')
+
+        expect(response.extra[:rate_limited]).to eq(true)
+        expect(User.find_with_email("user+#{rate_limit + 1}@example.com")).to be_nil
+        expect(analytics).to have_logged_event(
+          'Rate Limit Reached',
+          limiter_type: :reg_unconfirmed_email,
+        )
+      end
+
+      it 'sends the confirmation to the exact address that was submitted' do
+        response = subject.submit(email: 'user+tag@example.com', terms_accepted: '1')
+
+        expect(response).to be_success
+        expect(User.find_with_email('user+tag@example.com')).to be_present
+        expect(User.find_with_email('user@example.com')).to be_nil
+      end
+
+      it 'does not share a rate limit with a different mailbox on the same domain' do
+        rate_limit.times do |i|
+          RegisterUserEmailForm.new(analytics:, attempts_api_tracker:)
+            .submit(email: "user+#{i}@example.com", terms_accepted: '1')
+        end
+
+        response = subject.submit(email: 'someone.else@example.com', terms_accepted: '1')
+        expect(response.extra[:rate_limited]).to eq(false)
+      end
+    end
+
     context 'when the email exists but is unconfirmed and on a confirmed user' do
       it 'is valid and sends a registration email for a new user' do
         old_user = create(:user)

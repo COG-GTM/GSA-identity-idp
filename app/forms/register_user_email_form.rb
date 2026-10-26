@@ -45,6 +45,12 @@ class RegisterUserEmailForm
     @digested_base_email ||= OpenSSL::Digest::SHA256.hexdigest(normalized_email)
   end
 
+  def digested_rate_limit_email
+    @digested_rate_limit_email ||= OpenSSL::Digest::SHA256.hexdigest(
+      EmailNormalizer.new(email).rate_limit_email,
+    )
+  end
+
   def validate_terms_accepted
     return if @terms_accepted
 
@@ -127,7 +133,7 @@ class RegisterUserEmailForm
 
   def rate_limit!(rate_limit_type)
     rate_limiter = RateLimiter.new(
-      target: digested_base_email,
+      target: digested_rate_limit_email,
       rate_limit_type: rate_limit_type,
     )
 
