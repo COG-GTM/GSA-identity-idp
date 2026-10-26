@@ -6,6 +6,8 @@ class OpenidConnectTokenForm
   include Rails.application.routes.url_helpers
 
   ISSUED_AT_LEEWAY_SECONDS = 10
+  CLIENT_ASSERTION_MAX_LIFETIME_SECONDS = 5.minutes.to_i
+  CLIENT_ASSERTION_JTI_KEY_PREFIX = 'oidc:client_assertion_jti'
 
   ATTRS = %i[
     client_assertion
@@ -140,7 +142,7 @@ class OpenidConnectTokenForm
         client_assertion, ssl_cert.public_key, true,
         algorithm: 'RS256', iss: client_id,
         verify_iss: true, sub: client_id,
-        verify_sub: true
+        verify_sub: true, required_claims: %w[exp jti]
       )
     rescue JWT::DecodeError => err
       next
@@ -149,6 +151,8 @@ class OpenidConnectTokenForm
     if matching_cert && payload
       validate_aud_claim(payload)
       validate_iat(payload)
+      validate_exp(payload)
+      validate_jti_unused(payload)
     else
       errors.add(
         :client_assertion,
@@ -180,6 +184,56 @@ class OpenidConnectTokenForm
       :client_assertion, t('openid_connect.token.errors.invalid_iat'),
       type: :invalid_iat
     )
+  end
+
+  def validate_exp(payload)
+    exp = payload['exp']
+    max_exp = Time.zone.now.to_i + CLIENT_ASSERTION_MAX_LIFETIME_SECONDS + ISSUED_AT_LEEWAY_SECONDS
+    return true if exp.is_a?(Numeric) && exp.to_i <= max_exp
+
+    errors.add(
+      :client_assertion,
+      t(
+        'openid_connect.token.errors.invalid_exp',
+        max_seconds: CLIENT_ASSERTION_MAX_LIFETIME_SECONDS,
+      ),
+      type: :invalid_exp,
+    )
+  end
+
+  # Claims the jti atomically so an assertion can authenticate only one token request.
+  # Memoized because #response re-runs validations on the same form.
+  def validate_jti_unused(payload)
+    jti = payload['jti']
+    unless jti.is_a?(String) && jti.present?
+      errors.add(
+        :client_assertion, t('openid_connect.token.errors.invalid_jti'),
+        type: :invalid_jti
+      )
+      return
+    end
+
+    if @client_assertion_jti_claimed.nil?
+      return if errors.any?
+      @client_assertion_jti_claimed = claim_client_assertion_jti(jti, payload['exp'])
+    end
+    return if @client_assertion_jti_claimed
+
+    errors.add(
+      :client_assertion, t('openid_connect.token.errors.replayed_jti'),
+      type: :replayed_jti
+    )
+  end
+
+  def claim_client_assertion_jti(jti, exp)
+    ttl = [exp.to_i - Time.zone.now.to_i, 0].max + ISSUED_AT_LEEWAY_SECONDS
+    key = [
+      CLIENT_ASSERTION_JTI_KEY_PREFIX,
+      Digest::SHA256.hexdigest(client_id.to_s),
+      Digest::SHA256.hexdigest(jti),
+    ].join(':')
+
+    REDIS_POOL.with { |client| client.set(key, '1', nx: true, ex: ttl) } == true
   end
 
   def service_provider

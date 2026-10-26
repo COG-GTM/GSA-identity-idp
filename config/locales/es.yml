@@ -1622,8 +1622,11 @@ openid_connect.token.errors.invalid_aud: Notificación de audiencia no válida, 
 openid_connect.token.errors.invalid_authentication: El cliente debe autenticarse a través de PKCE o private_key_jwt, omitiendo code_challenge o client_assertion
 openid_connect.token.errors.invalid_code: no es válido porque no coincide con ningún usuario. Consulte nuestra documentación en https://developers.login.gov/oidc/#token
 openid_connect.token.errors.invalid_code_verifier: code_verifier no coincide con code_challenge
+openid_connect.token.errors.invalid_exp: exp debe ser como máximo %{max_seconds} segundos en el futuro
 openid_connect.token.errors.invalid_iat: iat debe ser una marca de tiempo Unix de punto flotante o un entero que represente un momento en el pasado
+openid_connect.token.errors.invalid_jti: jti debe ser una cadena no vacía y única para cada aserción de cliente
 openid_connect.token.errors.invalid_signature: No se pudo validar la afirmación contra ninguna clave pública registrada
+openid_connect.token.errors.replayed_jti: jti ya se utilizó; genere una nueva aserción de cliente para cada solicitud de token
 openid_connect.user_info.errors.malformed_authorization: Encabezado de autorización mal formado
 openid_connect.user_info.errors.no_authorization: No se proporcionó ningún encabezado de autorización
 openid_connect.user_info.errors.not_found: No se pudo encontrar la autorización para el contenido del access_token proporcionado o puede ser que este haya vencido
