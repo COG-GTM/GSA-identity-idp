@@ -752,6 +752,59 @@ RSpec.describe 'OpenID Connect' do
   end
 
   context 'with PKCE', driver: :mobile_rack_test do
+    before do
+      ServiceProvider.find_by!(issuer: 'urn:gov:gsa:openidconnect:test').update!(pkce: true)
+    end
+
+    context 'when the sp has registered certs and pkce is unset' do
+      before do
+        ServiceProvider.find_by!(issuer: 'urn:gov:gsa:openidconnect:test').update!(pkce: nil)
+      end
+
+      it 'rejects a token request authenticated only by the code_verifier' do
+        client_id = 'urn:gov:gsa:openidconnect:test'
+        code_verifier = SecureRandom.hex
+        code_challenge = Digest::SHA256.urlsafe_base64digest(code_verifier)
+        user = user_with_2fa
+
+        link_identity(user, build(:service_provider, issuer: client_id))
+        user.identities.last.update!(verified_attributes: ['email'])
+
+        visit openid_connect_authorize_path(
+          client_id: client_id,
+          response_type: 'code',
+          acr_values: Saml::Idp::Constants::IAL1_AUTHN_CONTEXT_CLASSREF,
+          scope: 'openid email',
+          redirect_uri: 'gov.gsa.openidconnect.test://result',
+          state: SecureRandom.hex,
+          prompt: 'select_account',
+          nonce: SecureRandom.hex,
+          code_challenge: code_challenge,
+          code_challenge_method: 'S256',
+        )
+
+        sign_in_live_with_2fa(user)
+        click_button t('webauthn_platform_recommended.skip')
+
+        redirect_uri = URI(oidc_redirect_url)
+        redirect_params = Rack::Utils.parse_query(redirect_uri.query).with_indifferent_access
+        code = redirect_params[:code]
+        expect(code).to be_present
+
+        page.driver.post api_openid_connect_token_path,
+                         grant_type: 'authorization_code',
+                         code: code,
+                         code_verifier: code_verifier
+
+        expect(page.status_code).to eq(400)
+        token_response = JSON.parse(page.body).with_indifferent_access
+        expect(token_response[:error])
+          .to include(t('openid_connect.token.errors.invalid_authentication'))
+        expect(token_response).to_not have_key(:id_token)
+        expect(token_response).to_not have_key(:access_token)
+      end
+    end
+
     it 'succeeds with client authentication via PKCE' do
       client_id = 'urn:gov:gsa:openidconnect:test'
       state = SecureRandom.hex
@@ -1170,6 +1223,7 @@ RSpec.describe 'OpenID Connect' do
     code_verifier = SecureRandom.hex
     code_challenge = Digest::SHA256.urlsafe_base64digest(code_verifier)
 
+    ServiceProvider.find_by!(issuer: client_id).update!(pkce: true)
     link_identity(user, build(:service_provider, issuer: client_id))
     user.identities.last.update!(verified_attributes: ['email'])
     visit openid_connect_authorize_path(

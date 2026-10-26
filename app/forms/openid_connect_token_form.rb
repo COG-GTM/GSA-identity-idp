@@ -91,8 +91,7 @@ class OpenidConnectTokenForm
   end
 
   def pkce_sp
-    pkce = service_provider&.pkce
-    pkce.nil? || pkce
+    service_provider.present? && service_provider.pkce_allowed?
   end
 
   def validate_pkce_or_private_key_jwt

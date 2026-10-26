@@ -124,7 +124,7 @@ class OpenidConnectAuthorizeForm
       vtr: vtr,
       requested_aal_value: requested_aal_value,
       scope: scope.join(' '),
-      code_challenge: code_challenge,
+      code_challenge: (code_challenge if service_provider&.pkce_allowed?),
       email_address_id: email_address_id,
     )
   end
