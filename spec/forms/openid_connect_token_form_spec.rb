@@ -254,8 +254,9 @@ RSpec.describe OpenidConnectTokenForm do
         context 'with no issued time' do
           before { jwt_payload.except!(:iat) }
 
-          it 'is still valid' do
-            expect(valid?).to eq(true)
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include('Missing required claim iat')
           end
         end
 
@@ -308,20 +309,22 @@ RSpec.describe OpenidConnectTokenForm do
           end
         end
 
-        context 'with a long-lived assertion replayed once its exp is inside the window' do
+        context 'with a long-lived assertion once its exp is inside the window' do
           let(:exp) { 1.hour.from_now }
 
           before do
-            jwt_payload.except!(:iat)
             jwt_payload[:exp] = exp.to_i
             expect(OpenidConnectTokenForm.new(params).valid?).to eq(false)
           end
 
-          it 'is invalid' do
+          it 'is still invalid' do
             travel_to(exp - 2.minutes) do
               expect(valid?).to eq(false)
               expect(form.errors[:client_assertion]).to include(
-                t('openid_connect.token.errors.replayed_jti'),
+                t(
+                  'openid_connect.token.errors.invalid_exp',
+                  max_seconds: OpenidConnectTokenForm::CLIENT_ASSERTION_MAX_LIFETIME_SECONDS,
+                ),
               )
             end
           end

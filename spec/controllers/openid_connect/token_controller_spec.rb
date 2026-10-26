@@ -26,6 +26,7 @@ RSpec.describe OpenidConnect::TokenController do
         aud: api_openid_connect_token_url,
         jti: SecureRandom.hex,
         exp: 5.minutes.from_now.to_i,
+        iat: Time.zone.now.to_i,
       }
 
       client_private_key = OpenSSL::PKey::RSA.new(Rails.root.join('keys', 'saml_test_sp.key').read)
