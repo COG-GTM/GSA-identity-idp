@@ -77,6 +77,16 @@ RSpec.describe Reporting::ApiTransactionCountReport do
       )
       expect(csv).to include("#{time_range.begin.to_date} - #{time_range.end.to_date}")
     end
+
+    it 'escapes cells that would be evaluated as spreadsheet formulas' do
+      allow(report).to receive(:api_transaction_count).and_return(
+        [['Week', 'DOL State'], ['=HYPERLINK("x")', 1]],
+      )
+
+      expect(CSV.parse(report.to_csvs.first)).to eq(
+        [['Week', 'DOL State'], ["'=HYPERLINK(\"x\")", '1']],
+      )
+    end
   end
 
   describe '#as_emailable_reports' do

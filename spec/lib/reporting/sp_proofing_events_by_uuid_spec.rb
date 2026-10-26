@@ -125,6 +125,28 @@ RSpec.describe Reporting::SpProofingEventsByUuid do
         end
       end
     end
+
+    context 'when an app differentiator contains a spreadsheet formula' do
+      let(:cloudwatch_logs) do
+        [
+          {
+            'login_uuid' => agency_user_login_uuid,
+            'workflow_started' => '1',
+            'first_event' => '1.735275676789E12',
+            'issuer' => 'test:app',
+            'app_differentiator' => '=HYPERLINK("x")',
+          },
+        ]
+      end
+
+      it 'escapes the cell so it is not evaluated as a formula' do
+        csv = CSV.parse(report.to_csv, headers: false)
+        app_differentiator_cell = csv.last[2]
+
+        expect(app_differentiator_cell).to eq("'=HYPERLINK(\"x\")")
+        expect(app_differentiator_cell).to start_with("'=")
+      end
+    end
   end
 
   describe '#as_emailable_reports' do
