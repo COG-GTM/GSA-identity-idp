@@ -64,7 +64,7 @@ class ServiceProvider < ApplicationRecord
   # authorize request cannot downgrade a private_key_jwt client to PKCE.
   def pkce_allowed?
     return pkce unless pkce.nil?
-    ssl_certs.empty?
+    Array(certs).none?(&:present?)
   end
 
   def encrypt_responses?

@@ -263,6 +263,13 @@ RSpec.describe ServiceProvider do
       it { expect(pkce_allowed?).to eq(false) }
     end
 
+    context 'when pkce is unset and the registered cert cannot be loaded' do
+      let(:pkce) { nil }
+      let(:certs) { ['cert_that_does_not_exist'] }
+
+      it { expect(pkce_allowed?).to eq(false) }
+    end
+
     context 'when pkce is unset and the sp has no registered certs' do
       let(:pkce) { nil }
       let(:certs) { [] }
