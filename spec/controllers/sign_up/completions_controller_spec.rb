@@ -266,6 +266,34 @@ RSpec.describe SignUp::CompletionsController do
         expect(response).to redirect_to account_path
       end
 
+      it 'redirects to the account page if the session request_url is on a foreign host' do
+        stub_sign_in(user)
+        subject.session[:sp] = {
+          acr_values: Saml::Idp::Constants::IAL1_AUTHN_CONTEXT_CLASSREF,
+          issuer: 'foo',
+          request_url: 'https://evil.example/openid_connect/authorize?client_id=foo',
+          requested_attributes: ['email'],
+        }
+
+        patch :update
+        expect(response).to redirect_to account_url
+      end
+
+      it 'redirects to the session request_url when it is on the IdP domain' do
+        stub_sign_in(user)
+        request_url =
+          "http://#{IdentityConfig.store.domain_name}/openid_connect/authorize?client_id=foo"
+        subject.session[:sp] = {
+          acr_values: Saml::Idp::Constants::IAL1_AUTHN_CONTEXT_CLASSREF,
+          issuer: 'foo',
+          request_url:,
+          requested_attributes: ['email'],
+        }
+
+        patch :update
+        expect(response).to redirect_to request_url
+      end
+
       context 'with a disposable email address' do
         let(:user) { create(:user, :fully_registered, email: temporary_email) }
 

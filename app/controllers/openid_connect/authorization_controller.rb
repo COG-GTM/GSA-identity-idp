@@ -207,7 +207,7 @@ module OpenidConnect
       session[:oidc_state_for_login_prompt] = @authorize_form.state
       return unless user_signed_in?
       return if check_sp_handoff_bounced
-      unless sp_session[:request_url] == request.original_url
+      unless sp_session[:request_url] == idp_request_url
         sign_out
         set_issuer_forced_reauthentication(
           issuer:,
@@ -223,11 +223,16 @@ module OpenidConnect
 
     def store_request
       ServiceProviderRequestHandler.new(
-        url: request.original_url,
+        url: idp_request_url,
         session: session,
         protocol_request: @authorize_form,
         protocol: FederatedProtocols::Oidc,
       ).call
+    end
+
+    # request.original_url takes its host from the client-supplied Host header
+    def idp_request_url
+      "#{request.protocol}#{IdentityConfig.store.domain_name}#{request.original_fullpath}"
     end
 
     def track_events

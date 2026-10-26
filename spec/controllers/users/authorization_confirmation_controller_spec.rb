@@ -4,7 +4,7 @@ RSpec.describe Users::AuthorizationConfirmationController do
   let(:user) { create(:user, :fully_registered) }
   let(:sp) { create(:service_provider) }
   let(:issuer) { sp.issuer }
-  let(:sp_request_url) { 'http://example.com/request/url' }
+  let(:sp_request_url) { 'http://www.example.com/request/url' }
   let(:sp_request_id) { '123abc' }
   let(:sp_session) { { issuer: issuer, request_url: sp_request_url, request_id: sp_request_id } }
 
@@ -39,6 +39,16 @@ RSpec.describe Users::AuthorizationConfirmationController do
       expect(@analytics).to have_logged_event(
         'Authentication Confirmation: Continue selected',
       )
+    end
+
+    context 'when the sp request url is on a foreign host' do
+      let(:sp_request_url) { 'https://evil.example/openid_connect/authorize' }
+
+      it 'redirects to the account page' do
+        post :create
+
+        expect(response).to redirect_to(account_url)
+      end
     end
   end
 
