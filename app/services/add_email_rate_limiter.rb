@@ -28,9 +28,11 @@ class AddEmailRateLimiter
   end
 
   def rate_limiters
+    # The per-user limiter goes first so a limited account cannot use up the recipient quota
+    # that is shared with other accounts.
     @rate_limiters ||= [
-      RateLimiter.new(rate_limit_type: :add_email_per_recipient, target: digested_email),
       RateLimiter.new(rate_limit_type: :add_email_per_user, user:),
+      RateLimiter.new(rate_limit_type: :add_email_per_recipient, target: digested_email),
     ]
   end
 
