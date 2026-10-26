@@ -4,7 +4,7 @@ RSpec.describe Users::AuthorizationConfirmationController do
   let(:user) { create(:user, :fully_registered) }
   let(:sp) { create(:service_provider) }
   let(:issuer) { sp.issuer }
-  let(:sp_request_url) { 'http://example.com/request/url' }
+  let(:sp_request_url) { 'http://www.example.com/request/url' }
   let(:sp_request_id) { '123abc' }
   let(:sp_session) { { issuer: issuer, request_url: sp_request_url, request_id: sp_request_id } }
 

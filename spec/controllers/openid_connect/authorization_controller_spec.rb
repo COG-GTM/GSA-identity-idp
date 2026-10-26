@@ -2161,6 +2161,18 @@ RSpec.describe OpenidConnect::AuthorizationController do
             vtr: nil,
           )
         end
+
+        context 'with a spoofed Host header' do
+          before { request.host = 'evil.example' }
+
+          it 'stores the request url on the IdP domain' do
+            action
+
+            expected_url = "http://#{IdentityConfig.store.domain_name}#{request.original_fullpath}"
+            expect(session[:sp][:request_url]).to eq(expected_url)
+            expect(ServiceProviderRequestProxy.last.url).to eq(expected_url)
+          end
+        end
       end
 
       context 'using vot' do

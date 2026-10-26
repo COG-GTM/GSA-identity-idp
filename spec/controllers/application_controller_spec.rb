@@ -586,6 +586,42 @@ RSpec.describe ApplicationController do
       end
     end
 
+    context 'with an absolute OIDC request url on the IdP domain' do
+      let(:sp_session_request_url) do
+        "http://#{IdentityConfig.store.domain_name}/openid_connect/authorize?client_id=abc"
+      end
+
+      it 'returns the original request' do
+        expect(url_with_updated_params).to eq sp_session_request_url
+      end
+    end
+
+    context 'with an OIDC request url on a foreign host' do
+      let(:sp_session_request_url) { 'https://evil.example/openid_connect/authorize?client_id=abc' }
+
+      it 'returns nil' do
+        expect(url_with_updated_params).to be_nil
+      end
+    end
+
+    context 'with a protocol-relative request url' do
+      let(:sp_session_request_url) { '//evil.example/openid_connect/authorize' }
+
+      it 'returns nil' do
+        expect(url_with_updated_params).to be_nil
+      end
+    end
+
+    context 'with a request url on the IdP host but a different port' do
+      let(:sp_session_request_url) do
+        "http://#{IdentityConfig.store.domain_name}:8443/openid_connect/authorize"
+      end
+
+      it 'returns nil' do
+        expect(url_with_updated_params).to be_nil
+      end
+    end
+
     context 'when the locale has been changed' do
       before { I18n.locale = :es }
       let(:sp_session_request_url) { '/authorize' }
