@@ -822,6 +822,73 @@ RSpec.describe Idv::ApiImageUploadForm do
       end
     end
 
+    context 'when concurrent submissions race past the attempt limit' do
+      let(:doc_auth_client) { double(DocAuth::Mock::DocAuthMockClient) }
+      let(:client_response) do
+        DocAuth::Response.new(
+          success: false,
+          errors: { general: 'failed' },
+          extra: { doc_auth_result: 'Failed' },
+        )
+      end
+      let(:racing_form) do
+        Idv::ApiImageUploadForm.new(
+          ActionController::Parameters.new(
+            front: front_image,
+            front_image_metadata: front_image_metadata.to_json,
+            back: back_image,
+            back_image_metadata: back_image_metadata.to_json,
+            document_capture_session_uuid: document_capture_session_uuid,
+          ),
+          service_provider:,
+          analytics: fake_analytics,
+          attempts_api_tracker:,
+          fraud_ops_tracker:,
+          liveness_checking_required:,
+          acuant_sdk_upgrade_ab_test_bucket:,
+        )
+      end
+      let(:rate_limiter) do
+        RateLimiter.new(rate_limit_type: :idv_doc_auth, user: document_capture_session.user)
+      end
+      let(:max_attempts) { RateLimiter.max_attempts(:idv_doc_auth) }
+
+      before do
+        (max_attempts - 1).times { rate_limiter.increment! }
+        [form, racing_form].each do |f|
+          f.instance_variable_set(:@doc_auth_client, doc_auth_client)
+        end
+        allow(doc_auth_client).to receive(:post_images).and_return(client_response)
+      end
+
+      it 'allows the attempt that reaches the limit' do
+        response = form.submit
+
+        expect(doc_auth_client).to have_received(:post_images).once
+        expect(response.errors).not_to have_key(:limit)
+        expect(rate_limiter.fetch_state!.attempts).to eq(max_attempts)
+      end
+
+      it 'only calls the vendor for the submission whose increment stays within the limit' do
+        # Both requests read the counter (max_attempts - 1) before either increments it.
+        expect(form.valid?).to eq(true)
+        expect(racing_form.valid?).to eq(true)
+
+        form.submit
+        racing_response = racing_form.submit
+
+        expect(doc_auth_client).to have_received(:post_images).once
+        expect(racing_response.success?).to eq(false)
+        expect(racing_response.errors[:limit]).to eq(
+          [I18n.t('doc_auth.errors.rate_limited_heading')],
+        )
+        expect(fake_analytics).to have_logged_event(
+          'IdV: doc auth image upload form submitted',
+          hash_including(success: false, submit_attempts: max_attempts + 1),
+        )
+      end
+    end
+
     context 'image data returns unknown errors' do
       let(:back_image) do
         Rack::Test::UploadedFile.new(StringIO.new(<<~YAML), original_filename: 'ial2.yml')
