@@ -14,7 +14,7 @@ RSpec.describe AddEmailRateLimiter do
     recipient_max.times { expect(attempt).to be_nil }
 
     limiter = attempt
-    expect(limiter.rate_limit_type).to eq('add_email_per_recipient')
+    expect(limiter.rate_limit_type).to eq(:add_email_per_recipient)
     expect(limiter).to be_limited
   end
 
@@ -22,13 +22,13 @@ RSpec.describe AddEmailRateLimiter do
     recipient_max.times { attempt(user: create(:user)) }
 
     expect(attempt(email: '  TARGET@example.com ')&.rate_limit_type)
-      .to eq('add_email_per_recipient')
+      .to eq(:add_email_per_recipient)
   end
 
   it 'applies the per-user limit across recipients' do
     user_max.times { |i| expect(attempt(email: "target#{i}@example.com")).to be_nil }
 
-    expect(attempt(email: 'another@example.com')&.rate_limit_type).to eq('add_email_per_user')
+    expect(attempt(email: 'another@example.com')&.rate_limit_type).to eq(:add_email_per_user)
   end
 
   it 'does not count a refused attempt against the other limiter' do

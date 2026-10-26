@@ -88,7 +88,7 @@ RSpec.describe Users::EmailsController do
         )
         expect(@analytics).to have_logged_event(
           'Rate Limit Reached',
-          limiter_type: 'add_email_per_recipient',
+          limiter_type: :add_email_per_recipient,
         )
       end
     end
@@ -293,7 +293,7 @@ RSpec.describe Users::EmailsController do
         )
         expect(@analytics).to have_logged_event(
           'Rate Limit Reached',
-          limiter_type: 'add_email_per_recipient',
+          limiter_type: :add_email_per_recipient,
         )
       end
     end

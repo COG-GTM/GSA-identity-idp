@@ -104,7 +104,7 @@ RSpec.describe AddUserEmailForm do
 
         expect(response.success?).to eq(false)
         expect(form.errors.details[:email]).to include(error: :rate_limited)
-        expect(form.rate_limiter.rate_limit_type).to eq('add_email_per_recipient')
+        expect(form.rate_limiter.rate_limit_type).to eq(:add_email_per_recipient)
         expect(EmailAddress.find_with_email(new_email)).to be_nil
       end
     end
