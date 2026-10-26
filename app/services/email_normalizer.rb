@@ -22,10 +22,24 @@ class EmailNormalizer
     end
   end
 
+  # Mailbox identity used for per-address rate limiting. Unlike #normalized_email (which is
+  # persisted in SuspendedEmail digests), this drops any +tag for every domain and ignores case,
+  # since most providers deliver user+tag@ and USER@ to the same inbox as user@.
+  # @return [String]
+  def rate_limit_email
+    return normalized_email.downcase if gmail?
+    return email.to_s.downcase if email.local.blank? || email.domain.blank?
+
+    before_plus, _after_plus = email.local.split('+', 2)
+    local = before_plus.presence || email.local
+    [local, email.domain].join('@').downcase
+  end
+
   private
 
   def gmail?
-    email.domain == 'gmail.com' || google_mx_record?
+    return @gmail if defined?(@gmail)
+    @gmail = email.domain == 'gmail.com' || google_mx_record?
   end
 
   def google_mx_record?
