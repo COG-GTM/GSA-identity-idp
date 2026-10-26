@@ -247,6 +247,10 @@ class RateLimiter
         max_attempts: IdentityConfig.store.idv_send_link_max_attempts,
         attempt_window: IdentityConfig.store.idv_send_link_attempt_window_in_minutes,
       },
+      idv_send_link_phone: {
+        max_attempts: IdentityConfig.store.idv_send_link_phone_max_attempts,
+        attempt_window: IdentityConfig.store.idv_send_link_phone_attempt_window_in_minutes,
+      },
       verify_personal_key: {
         max_attempts: IdentityConfig.store.verify_personal_key_max_attempts,
         attempt_window: IdentityConfig.store.verify_personal_key_attempt_window_in_minutes,

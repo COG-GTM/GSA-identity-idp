@@ -360,6 +360,158 @@ RSpec.describe Idv::HybridHandoffController do
 
         put :update, params: params
       end
+
+      context 'with a phone number in a country that does not support SMS' do
+        let(:params) do
+          {
+            type: 'mobile',
+            doc_auth: { phone: '+7 912 345 67 89' },
+          }
+        end
+
+        it 'does not send a link and shows an error' do
+          expect(Telephony).not_to receive(:send_doc_auth_link)
+
+          put :update, params: params
+
+          expect(response).to redirect_to(idv_hybrid_handoff_url)
+          expect(flash[:error]).to eq(
+            t(
+              'two_factor_authentication.otp_delivery_preference.sms_unsupported',
+              location: 'Russia',
+            ),
+          )
+          expect(subject.idv_session.phone_for_mobile_flow).to be_nil
+          expect(subject.idv_session.flow_path).to be_nil
+          expect(@analytics).to have_logged_event(
+            analytics_name,
+            hash_including(
+              success: false,
+              destination: :link_sent,
+              error_details: { phone: { sms_unsupported: true } },
+            ),
+          )
+        end
+
+        context 'with a UAE phone number' do
+          let(:params) do
+            {
+              type: 'mobile',
+              doc_auth: { phone: '+971 50 123 4567' },
+            }
+          end
+
+          it 'does not send a link' do
+            expect(Telephony).not_to receive(:send_doc_auth_link)
+
+            put :update, params: params
+
+            expect(response).to redirect_to(idv_hybrid_handoff_url)
+            expect(flash[:error]).to eq(
+              t(
+                'two_factor_authentication.otp_delivery_preference.sms_unsupported',
+                location: 'United Arab Emirates (UAE)',
+              ),
+            )
+          end
+        end
+      end
+
+      context 'with an invalid phone number' do
+        let(:params) do
+          {
+            type: 'mobile',
+            doc_auth: { phone: '123' },
+          }
+        end
+
+        it 'does not send a link' do
+          expect(Telephony).not_to receive(:send_doc_auth_link)
+
+          put :update, params: params
+
+          expect(response).to redirect_to(idv_hybrid_handoff_url)
+          expect(flash[:error]).to be_present
+        end
+      end
+
+      context 'when a concurrent request increments the rate limit after it was read' do
+        let(:max_attempts) { RateLimiter.max_attempts(:idv_send_link) }
+        let(:racing_rate_limiter) do
+          RateLimiter.new(rate_limit_type: :idv_send_link, user: user)
+        end
+
+        before do
+          (max_attempts - 1).times do
+            RateLimiter.new(rate_limit_type: :idv_send_link, user: user).increment!
+          end
+
+          allow(RateLimiter).to receive(:new).and_call_original
+          allow(RateLimiter).to receive(:new)
+            .with(user: user, rate_limit_type: :idv_send_link)
+            .and_return(racing_rate_limiter)
+
+          raced = false
+          allow(racing_rate_limiter).to receive(:fetch_state!).and_wrap_original do |original|
+            original.call.tap do
+              next if raced
+              raced = true
+              REDIS_THROTTLE_POOL.with { |client| client.incr(racing_rate_limiter.key) }
+            end
+          end
+        end
+
+        it 'does not send a link once the incremented count is over the limit' do
+          expect(Telephony).not_to receive(:send_doc_auth_link)
+
+          freeze_time { put :update, params: params }
+
+          expect(racing_rate_limiter.attempts).to eq(max_attempts + 1)
+          expect(response).to redirect_to(idv_hybrid_handoff_url)
+          expect(flash[:error]).to eq(
+            t(
+              'doc_auth.errors.send_link_limited',
+              timeout: "#{RateLimiter.attempt_window_in_minutes(:idv_send_link)} minutes",
+            ),
+          )
+          expect(@analytics).to have_logged_event(
+            'Rate Limit Reached',
+            limiter_type: :idv_send_link,
+          )
+        end
+      end
+
+      context 'when the destination phone number is rate limited' do
+        before do
+          RateLimiter.new(
+            target: Pii::Fingerprinter.fingerprint('+12025555555'),
+            rate_limit_type: :idv_send_link_phone,
+          ).increment_to_limited!
+        end
+
+        it 'does not send a link' do
+          expect(Telephony).not_to receive(:send_doc_auth_link)
+
+          put :update, params: params
+
+          expect(response).to redirect_to(idv_hybrid_handoff_url)
+          expect(@analytics).to have_logged_event(
+            'Rate Limit Reached',
+            limiter_type: :idv_send_link_phone,
+          )
+        end
+      end
+
+      it 'counts the send against the destination phone number' do
+        put :update, params: params
+
+        expect(
+          RateLimiter.new(
+            target: Pii::Fingerprinter.fingerprint('+12025555555'),
+            rate_limit_type: :idv_send_link_phone,
+          ).attempts,
+        ).to eq(1)
+      end
     end
 
     context 'desktop flow' do

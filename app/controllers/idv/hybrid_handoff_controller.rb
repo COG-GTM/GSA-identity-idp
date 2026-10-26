@@ -94,8 +94,15 @@ module Idv
     end
 
     def handle_phone_submission
-      return rate_limited_failure if rate_limiter.limited?
-      rate_limiter.increment!
+      return rate_limited_failure(rate_limiter) unless consume_attempt!(rate_limiter)
+
+      phone_form_response = validate_destination_phone
+      return invalid_phone_failure(phone_form_response) unless phone_form_response.success?
+
+      unless consume_attempt!(destination_phone_rate_limiter)
+        return rate_limited_failure(destination_phone_rate_limiter)
+      end
+
       idv_session.phone_for_mobile_flow = formatted_destination_phone
       idv_session.flow_path = 'hybrid'
       telephony_result = send_link
@@ -114,6 +121,30 @@ module Idv
 
       analytics.idv_doc_auth_hybrid_handoff_submitted(
         **analytics_arguments.merge(telephony_form_response.to_h),
+      )
+    end
+
+    # Increments first and checks the count Redis returns, so concurrent requests
+    # cannot all pass a stale limited? check.
+    def consume_attempt!(limiter)
+      attempts = limiter.increment!
+      attempts.present? && attempts <= RateLimiter.max_attempts(limiter.rate_limit_type)
+    end
+
+    def validate_destination_phone
+      build_form.submit(phone: formatted_destination_phone)
+    end
+
+    def invalid_phone_failure(phone_form_response)
+      idv_session.flow_path = nil
+      failure(phone_form_response.first_error_message(:phone))
+      redirect_to idv_hybrid_handoff_url
+
+      analytics.idv_doc_auth_hybrid_handoff_submitted(
+        **analytics_arguments.merge(phone_form_response.to_h).merge(
+          destination: :link_sent,
+          flow_path: nil,
+        ),
       )
     end
 
@@ -191,6 +222,13 @@ module Idv
       )
     end
 
+    def destination_phone_rate_limiter
+      @destination_phone_rate_limiter ||= RateLimiter.new(
+        target: Pii::Fingerprinter.fingerprint(Phonelib.parse(formatted_destination_phone).e164),
+        rate_limit_type: :idv_send_link_phone,
+      )
+    end
+
     def analytics_arguments
       {
         step: 'hybrid_handoff',
@@ -212,22 +250,22 @@ module Idv
       )
     end
 
-    def rate_limited_failure
+    def rate_limited_failure(limiter)
       analytics.rate_limit_reached(
-        limiter_type: :idv_send_link,
+        limiter_type: limiter.rate_limit_type,
       )
       # TODO: Attempts API PII Add phone_number: formatted_destination_phone,
       attempts_api_tracker.idv_rate_limited(
-        limiter_type: :idv_send_link,
+        limiter_type: limiter.rate_limit_type,
       )
       fraud_ops_tracker.idv_rate_limited(
-        limiter_type: :idv_send_link,
+        limiter_type: limiter.rate_limit_type,
       )
       message = I18n.t(
         'doc_auth.errors.send_link_limited',
         timeout: distance_of_time_in_words(
           Time.zone.now,
-          [rate_limiter.expires_at, Time.zone.now].compact.max,
+          [limiter.expires_at, Time.zone.now].compact.max,
           except: :seconds,
         ),
       )
@@ -245,8 +283,9 @@ module Idv
     end
 
     def formatted_destination_phone
-      raw_phone = params.require(:doc_auth).permit(:phone)
-      PhoneFormatter.format(raw_phone, country_code: 'US')
+      return @formatted_destination_phone if defined?(@formatted_destination_phone)
+      raw_phone = params.require(:doc_auth).permit(:phone)[:phone]
+      @formatted_destination_phone = PhoneFormatter.format(raw_phone, country_code: 'US')
     end
 
     def how_to_verify_form_params

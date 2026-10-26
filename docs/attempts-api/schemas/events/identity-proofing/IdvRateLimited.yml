@@ -15,6 +15,7 @@ allOf:
           - proof_address
           - phone_confirmation
           - idv_send_link
+          - idv_send_link_phone
       phone:
         type: string
         description: |
