@@ -245,6 +245,8 @@ module IdentityConfig
     config.add(:idv_resolution_vendor_switching_enabled, type: :boolean)
     config.add(:idv_send_link_attempt_window_in_minutes, type: :integer)
     config.add(:idv_send_link_max_attempts, type: :integer)
+    config.add(:idv_send_link_phone_attempt_window_in_minutes, type: :integer)
+    config.add(:idv_send_link_phone_max_attempts, type: :integer)
     config.add(:idv_socure_docv_flow_id_only, type: :string)
     config.add(:idv_socure_docv_flow_id_w_selfie, type: :string)
     config.add(:idv_socure_phonerisk_name_correlation_score_threshold, type: :float)

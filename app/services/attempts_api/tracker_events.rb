@@ -329,7 +329,7 @@ module AttemptsApi
 
     # The user has exceeded the rate limit during idv document upload
     # @param limiter_type [String<'idv_doc_auth', 'idv_resolution', 'proof_ssn', 'proof_address',
-    #   'confirmation', 'idv_send_link']
+    #   'confirmation', 'idv_send_link', 'idv_send_link_phone']
     #  Type of rate limit
     def idv_rate_limited(limiter_type:)
       track_event(
