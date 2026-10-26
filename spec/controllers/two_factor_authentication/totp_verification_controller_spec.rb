@@ -251,6 +251,100 @@ RSpec.describe TwoFactorAuthentication::TotpVerificationController do
       end
     end
 
+    context 'when the user is locked out' do
+      let(:max_attempts) { IdentityConfig.store.login_otp_confirmation_max_attempts }
+      let(:user) do
+        create(
+          :user,
+          :fully_registered,
+          second_factor_attempts_count: max_attempts,
+          second_factor_locked_at: Time.zone.now,
+        )
+      end
+
+      before do
+        sign_in_before_2fa(user)
+        @secret = user.generate_totp_secret
+        Db::AuthAppConfiguration.create(user, @secret, nil, 'foo')
+      end
+
+      it 'does not check the code' do
+        expect(TotpVerificationForm).not_to receive(:new)
+
+        post :create, params: { code: '123456' }
+
+        expect(response).to render_template('two_factor_authentication/_locked')
+        expect(user.reload.second_factor_attempts_count).to eq(max_attempts)
+      end
+
+      it 'does not authenticate the user with a correct code' do
+        post :create, params: { code: generate_totp_code(@secret) }
+
+        expect(response).to render_template('two_factor_authentication/_locked')
+        expect(controller.user_session).to be_blank
+        expect(user.reload.locked_out?).to eq(true)
+        expect(@analytics).to have_logged_event(
+          'Multi-Factor Authentication: max attempts reached',
+        )
+      end
+    end
+
+    context 'when the user is locked out by another request while the code is checked' do
+      before do
+        sign_in_before_2fa
+        @secret = controller.current_user.generate_totp_secret
+        Db::AuthAppConfiguration.create(controller.current_user, @secret, nil, 'foo')
+      end
+
+      it 'does not authenticate the user with a correct code' do
+        user = controller.current_user
+        form = instance_double(TotpVerificationForm)
+        allow(TotpVerificationForm).to receive(:new).and_return(form)
+        allow(form).to receive(:submit) do
+          User.where(id: user.id).update_all(
+            second_factor_attempts_count: IdentityConfig.store.login_otp_confirmation_max_attempts,
+            second_factor_locked_at: Time.zone.now,
+          )
+          FormResponse.new(success: true)
+        end
+
+        post :create, params: { code: generate_totp_code(@secret) }
+
+        expect(response).to render_template('two_factor_authentication/_locked')
+        expect(user.reload.locked_out?).to eq(true)
+        expect(controller.user_session).to be_blank
+      end
+    end
+
+    context 'when many wrong codes are submitted for one session' do
+      let(:max_attempts) { IdentityConfig.store.login_otp_confirmation_max_attempts }
+
+      before do
+        sign_in_before_2fa
+        @secret = controller.current_user.generate_totp_secret
+        Db::AuthAppConfiguration.create(controller.current_user, @secret, nil, 'foo')
+      end
+
+      it 'checks at most the max attempts even when the session predates the lockout' do
+        user = controller.current_user
+        checked = 0
+        allow(TotpVerificationForm).to receive(:new).and_wrap_original do |original, *args|
+          checked += 1
+          original.call(*args)
+        end
+        # Simulates concurrent requests that loaded the session before the lockout signed it out.
+        allow(controller).to receive(:sign_out)
+
+        (max_attempts * 3).times do
+          post :create, params: { code: '000000' }
+        end
+
+        expect(checked).to eq(max_attempts)
+        expect(user.reload.second_factor_attempts_count).to eq(max_attempts)
+        expect(user.locked_out?).to eq(true)
+      end
+    end
+
     context 'when the user lockout period expires' do
       before do
         lockout_period = IdentityConfig.store.lockout_period_in_minutes.minutes

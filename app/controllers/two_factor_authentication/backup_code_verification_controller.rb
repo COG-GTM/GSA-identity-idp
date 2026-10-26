@@ -6,6 +6,7 @@ module TwoFactorAuthentication
     include NewDeviceConcern
 
     prepend_before_action :authenticate_user
+    before_action -> { reserve_second_factor_attempt(type: 'backup_code') }, only: :create
 
     def show
       recaptcha_annotation = annotate_recaptcha(
@@ -23,7 +24,9 @@ module TwoFactorAuthentication
 
     def create
       @backup_code_form = BackupCodeVerificationForm.new(user: current_user, request:)
-      result = @backup_code_form.submit(backup_code_params)
+      result = reject_success_if_second_factor_locked(
+        @backup_code_form.submit(backup_code_params),
+      )
       handle_result(result)
     end
 

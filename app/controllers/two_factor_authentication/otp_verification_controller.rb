@@ -9,6 +9,7 @@ module TwoFactorAuthentication
     before_action :confirm_multiple_factors_enabled
     before_action :redirect_if_blank_phone, only: [:show]
     before_action :confirm_voice_capability, only: [:show]
+    before_action -> { reserve_second_factor_attempt(type: 'otp') }, only: :create
 
     helper_method :in_multi_mfa_selection_flow?
 
@@ -26,7 +27,7 @@ module TwoFactorAuthentication
       if UserSessionContext.confirmation_context?(context)
         increment_mfa_selection_attempt_count(otp_auth_method)
       end
-      result = otp_verification_form.submit
+      result = reject_success_if_second_factor_locked(otp_verification_form.submit)
 
       if UserSessionContext.confirmation_context?(context)
         log_confirmation_analytics(result)

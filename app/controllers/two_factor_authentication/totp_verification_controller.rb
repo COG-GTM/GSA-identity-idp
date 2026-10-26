@@ -6,6 +6,7 @@ module TwoFactorAuthentication
     include NewDeviceConcern
 
     before_action :confirm_totp_enabled
+    before_action -> { reserve_second_factor_attempt(type: 'totp') }, only: :create
 
     def show
       recaptcha_annotation = annotate_recaptcha(
@@ -22,7 +23,9 @@ module TwoFactorAuthentication
     end
 
     def create
-      result = TotpVerificationForm.new(current_user, params.require(:code).strip).submit
+      result = reject_success_if_second_factor_locked(
+        TotpVerificationForm.new(current_user, params.require(:code).strip).submit,
+      )
 
       handle_verification_for_authentication_context(
         result:,
