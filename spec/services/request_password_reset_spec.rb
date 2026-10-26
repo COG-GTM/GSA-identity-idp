@@ -283,6 +283,63 @@ RSpec.describe RequestPasswordReset do
         end
           .to_not(change { user.reload.reset_password_token })
       end
+
+      it 'shares one limit across case and whitespace variants of the email' do
+        max_attempts = IdentityConfig.store.reset_password_email_max_attempts
+        local, domain = email.split('@')
+        variants = [
+          email.upcase,
+          "#{local.capitalize}@#{domain}",
+          "#{local}@#{domain.upcase}",
+          " #{email}",
+          "#{email} ",
+          "\t#{email.swapcase}\n",
+        ]
+
+        (max_attempts - 1).times do |i|
+          expect do
+            RequestPasswordReset.new(
+              email: variants[i % variants.length],
+              analytics:,
+              attempts_api_tracker:,
+            ).perform
+          end
+            .to(change { user.reload.reset_password_token })
+        end
+
+        expect_delivered_email_count(max_attempts - 1)
+        expect(PushNotification::HttpPush).not_to receive(:deliver)
+
+        variants.each do |variant|
+          expect do
+            RequestPasswordReset.new(
+              email: variant,
+              analytics:,
+              attempts_api_tracker:,
+            ).perform
+          end
+            .to_not(change { user.reload.reset_password_token })
+        end
+
+        expect_delivered_email_count(max_attempts - 1)
+        expect(analytics).to have_logged_event(
+          'Rate Limit Reached',
+          limiter_type: :reset_password_email,
+        )
+      end
+
+      it 'does not use the raw email address in the rate limit key' do
+        RequestPasswordReset.new(email: email.upcase, analytics:, attempts_api_tracker:).perform
+
+        keys = REDIS_THROTTLE_POOL.with { |client| client.keys('throttle:throttle:*') }
+        expect(keys).to eq(
+          [
+            "throttle:throttle:#{Pii::Fingerprinter.fingerprint(email.downcase)}:" \
+              'reset_password_email',
+          ],
+        )
+        expect(keys.join).not_to include(email.split('@').first)
+      end
     end
   end
 end

@@ -6,7 +6,10 @@ RequestPasswordReset = RedactedStruct.new(
   allowed_members: [:request_id]
 ) do
   def perform
-    rate_limiter = RateLimiter.new(target: email, rate_limit_type: :reset_password_email)
+    rate_limiter = RateLimiter.new(
+      target: rate_limit_target,
+      rate_limit_type: :reset_password_email,
+    )
     rate_limiter.increment!
     if rate_limiter.limited?
       analytics.rate_limit_reached(limiter_type: :reset_password_email)
@@ -34,6 +37,10 @@ RequestPasswordReset = RedactedStruct.new(
   end
 
   private
+
+  def rate_limit_target
+    Pii::Fingerprinter.fingerprint(email.to_s.downcase.strip)
+  end
 
   def user
     @user ||= email_address_record&.user
