@@ -126,6 +126,18 @@ RSpec.describe OtpRateLimiter do
         expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(true)
         expect(current_user.reload.second_factor_locked_at).to be_present
       end
+
+      it 'does not clear a newer expired lockout than the one this user was loaded with' do
+        newer_locked_at = (IdentityConfig.store.lockout_period_in_minutes.minutes + 30.seconds).ago
+        User.where(id: current_user.id).update_all(second_factor_locked_at: newer_locked_at)
+
+        expect(current_user.clear_expired_second_factor_lockout!).to eq(false)
+        otp_rate_limiter.reset_count_if_user_no_longer_locked_out
+
+        expect(otp_rate_limiter.exceeded_otp_send_limit?).to eq(true)
+        expect(current_user.reload.second_factor_locked_at)
+          .to be_within(1.second).of(newer_locked_at)
+      end
     end
   end
 
