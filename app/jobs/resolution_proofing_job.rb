@@ -62,6 +62,8 @@ class ResolutionProofingJob < ApplicationJob
 
     callback_log_data.result[:ssn_is_unique] = ssn_is_unique
 
+    refund_resolution_attempt(user:, result_id:) if callback_log_data.result[:exception].present?
+
     document_capture_session = DocumentCaptureSession.new(result_id: result_id)
     document_capture_session.store_proofing_result(callback_log_data.result)
   ensure
@@ -110,6 +112,12 @@ class ResolutionProofingJob < ApplicationJob
       result: result.adjudicated_result.to_h,
       state_id_success: result.state_id_result.success?,
     )
+  end
+
+  # The attempt is counted when verify info is submitted; vendor errors should not count
+  # against the user, whether or not they ever view the result.
+  def refund_resolution_attempt(user:, result_id:)
+    RateLimiter.new(user:, rate_limit_type: :idv_resolution).refund!(result_id)
   end
 
   def user_email_for_proofing(user)
