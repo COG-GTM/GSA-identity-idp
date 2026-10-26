@@ -4,8 +4,9 @@ class AddUserEmailForm
   include ActiveModel::Model
   include FormAddEmailValidator
   include ActionView::Helpers::TranslationHelper
+  include DOTIW::Methods
 
-  attr_reader :email, :in_select_email_flow
+  attr_reader :email, :in_select_email_flow, :rate_limiter
   alias_method :in_select_email_flow?, :in_select_email_flow
 
   def self.model_name
@@ -25,7 +26,7 @@ class AddUserEmailForm
     @email = params[:email]
     @email_address = email_address_record(@email)
     @request_id = params[:request_id]
-    if valid?
+    if valid? && !rate_limited!
       process_successful_submission
     else
       @success = false
@@ -48,6 +49,24 @@ class AddUserEmailForm
 
   attr_writer :email
   attr_reader :success, :email_address, :request_id
+
+  def rate_limited!
+    @rate_limiter = AddEmailRateLimiter.new(user:, email:).attempt!
+    return false if @rate_limiter.blank?
+
+    errors.add(
+      :email,
+      :rate_limited,
+      message: t(
+        'errors.messages.phone_confirmation_limited',
+        timeout: distance_of_time_in_words(
+          Time.zone.now,
+          [rate_limiter.expires_at, Time.zone.now].compact.max,
+        ),
+      ),
+    )
+    true
+  end
 
   def process_successful_submission
     @success = true

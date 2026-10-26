@@ -227,6 +227,14 @@ class RateLimiter
         max_attempts: IdentityConfig.store.doc_auth_max_attempts,
         attempt_window: IdentityConfig.store.doc_auth_attempt_window_in_minutes,
       },
+      add_email_per_recipient: {
+        max_attempts: IdentityConfig.store.add_email_per_recipient_max_attempts,
+        attempt_window: IdentityConfig.store.add_email_per_recipient_window_in_minutes,
+      },
+      add_email_per_user: {
+        max_attempts: IdentityConfig.store.add_email_per_user_max_attempts,
+        attempt_window: IdentityConfig.store.add_email_per_user_window_in_minutes,
+      },
       reg_unconfirmed_email: {
         max_attempts: IdentityConfig.store.reg_unconfirmed_email_max_attempts,
         attempt_window: IdentityConfig.store.reg_unconfirmed_email_window_in_minutes,

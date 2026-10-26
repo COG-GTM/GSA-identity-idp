@@ -90,6 +90,36 @@ RSpec.describe AddUserEmailForm do
       end
     end
 
+    context 'when the recipient has hit the add email rate limit' do
+      before do
+        IdentityConfig.store.add_email_per_recipient_max_attempts.times do
+          AddEmailRateLimiter.new(user: create(:user), email: new_email).attempt!
+        end
+      end
+
+      it 'fails with a rate limit error and does not send or save' do
+        expect(SendAddEmailConfirmation).to_not receive(:new)
+
+        response = submit
+
+        expect(response.success?).to eq(false)
+        expect(form.errors.details[:email]).to include(error: :rate_limited)
+        expect(form.rate_limiter.rate_limit_type).to eq(:add_email_per_recipient)
+        expect(EmailAddress.find_with_email(new_email)).to be_nil
+      end
+    end
+
+    context 'when re-adding the same unconfirmed address repeatedly' do
+      it 'stops sending once the per-recipient limit is reached' do
+        max = IdentityConfig.store.add_email_per_recipient_max_attempts
+
+        results = (max + 2).times.map { AddUserEmailForm.new.submit(user, email: new_email) }
+
+        expect(results.count(&:success?)).to eq(max)
+        expect(results.last(2).map(&:success?)).to eq([false, false])
+      end
+    end
+
     context 'in select email flow' do
       subject(:form) { AddUserEmailForm.new(in_select_email_flow: true) }
 
