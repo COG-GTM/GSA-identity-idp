@@ -291,6 +291,42 @@ RSpec.describe OpenidConnectTokenForm do
           end
         end
 
+        context 'with a lifetime longer than allowed relative to its issued time' do
+          before do
+            jwt_payload[:iat] = 1.year.ago.to_i
+            jwt_payload[:exp] = 2.minutes.from_now.to_i
+          end
+
+          it 'is invalid' do
+            expect(valid?).to eq(false)
+            expect(form.errors[:client_assertion]).to include(
+              t(
+                'openid_connect.token.errors.invalid_exp',
+                max_seconds: OpenidConnectTokenForm::CLIENT_ASSERTION_MAX_LIFETIME_SECONDS,
+              ),
+            )
+          end
+        end
+
+        context 'with a long-lived assertion replayed once its exp is inside the window' do
+          let(:exp) { 1.hour.from_now }
+
+          before do
+            jwt_payload.except!(:iat)
+            jwt_payload[:exp] = exp.to_i
+            expect(OpenidConnectTokenForm.new(params).valid?).to eq(false)
+          end
+
+          it 'is invalid' do
+            travel_to(exp - 2.minutes) do
+              expect(valid?).to eq(false)
+              expect(form.errors[:client_assertion]).to include(
+                t('openid_connect.token.errors.replayed_jti'),
+              )
+            end
+          end
+        end
+
         context 'without a jti' do
           before { jwt_payload.except!(:jti) }
 

@@ -187,10 +187,9 @@ class OpenidConnectTokenForm
   end
 
   def validate_exp(payload)
-    exp = payload['exp']
-    max_exp = Time.zone.now.to_i + CLIENT_ASSERTION_MAX_LIFETIME_SECONDS + ISSUED_AT_LEEWAY_SECONDS
-    return true if exp.is_a?(Numeric) && exp.to_i <= max_exp
+    return true if client_assertion_lifetime_valid?(payload)
 
+    @client_assertion_lifetime_invalid = true
     errors.add(
       :client_assertion,
       t(
@@ -201,8 +200,21 @@ class OpenidConnectTokenForm
     )
   end
 
+  def client_assertion_lifetime_valid?(payload)
+    exp = payload['exp']
+    iat = payload['iat']
+    max_lifetime = CLIENT_ASSERTION_MAX_LIFETIME_SECONDS + ISSUED_AT_LEEWAY_SECONDS
+
+    return false unless exp.is_a?(Numeric)
+    return false if exp.to_i > Time.zone.now.to_i + max_lifetime
+    return false if iat.is_a?(Numeric) && exp.to_i - iat.to_i > max_lifetime
+    true
+  end
+
   # Claims the jti atomically so an assertion can authenticate only one token request.
-  # Memoized because #response re-runs validations on the same form.
+  # Memoized because #response re-runs validations on the same form. Signed assertions
+  # rejected for an over-long lifetime are also claimed, so they cannot be replayed once
+  # their exp falls inside the allowed window.
   def validate_jti_unused(payload)
     jti = payload['jti']
     unless jti.is_a?(String) && jti.present?
@@ -214,6 +226,10 @@ class OpenidConnectTokenForm
     end
 
     if @client_assertion_jti_claimed.nil?
+      if @client_assertion_lifetime_invalid
+        @client_assertion_jti_claimed = claim_client_assertion_jti(jti, payload['exp'])
+        return
+      end
       return if errors.any?
       @client_assertion_jti_claimed = claim_client_assertion_jti(jti, payload['exp'])
     end
