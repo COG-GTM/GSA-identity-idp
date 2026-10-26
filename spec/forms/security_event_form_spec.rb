@@ -347,10 +347,7 @@ RSpec.describe SecurityEventForm do
         end
         let(:subject_sub) { AgencyIdentityLinker.new(sibling_identity).link_identity.uuid }
 
-        before do
-          jwt_payload[:iss] = service_provider.issuer
-          identity.destroy!
-        end
+        before { identity.destroy! }
 
         it 'is invalid' do
           expect(valid?).to eq(false)
