@@ -35,11 +35,11 @@ class ServiceProviderIdentity < ApplicationRecord
   end
 
   def display_name
-    sp_metadata[:friendly_name] || service_provider_record&.agency&.name || service_provider
+    friendly_name || service_provider_record&.agency&.name || service_provider
   end
 
   def agency_name
-    service_provider_record&.agency&.name || sp_metadata[:friendly_name] || service_provider
+    service_provider_record&.agency&.name || friendly_name || service_provider
   end
 
   def piv_cac_enabled?
@@ -47,15 +47,15 @@ class ServiceProviderIdentity < ApplicationRecord
   end
 
   def failure_to_proof_url
-    sp_metadata[:failure_to_proof_url]
+    service_provider_record&.failure_to_proof_url
   end
 
   def return_to_sp_url
-    sp_metadata[:return_to_sp_url]
+    service_provider_record&.return_to_sp_url
   end
 
   def friendly_name
-    sp_metadata[:friendly_name]
+    service_provider_record&.friendly_name
   end
 
   def service_provider_id

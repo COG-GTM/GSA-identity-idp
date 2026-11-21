@@ -103,6 +103,18 @@ RSpec.describe ServiceProviderIdentity do
     end
   end
 
+  describe 'service provider attribute readers' do
+    it 'reads attributes without parsing service provider certificates' do
+      expect_any_instance_of(ServiceProvider).not_to receive(:ssl_certs)
+
+      expect(identity_with_sp.display_name).to eq(service_provider.friendly_name)
+      expect(identity_with_sp.friendly_name).to eq(service_provider.friendly_name)
+      expect(identity_with_sp.agency_name).to eq(service_provider.agency.name)
+      expect(identity_with_sp.return_to_sp_url).to eq(service_provider.return_to_sp_url)
+      expect(identity_with_sp.failure_to_proof_url).to eq(service_provider.failure_to_proof_url)
+    end
+  end
+
   describe '#agency_name' do
     it 'returns service provider agency first' do
       expect(identity_with_sp.agency_name).to eq(service_provider.agency.name)
