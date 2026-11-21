@@ -113,6 +113,13 @@ RSpec.describe ServiceProviderIdentity do
       expect(identity_with_sp.return_to_sp_url).to eq(service_provider.return_to_sp_url)
       expect(identity_with_sp.failure_to_proof_url).to eq(service_provider.failure_to_proof_url)
     end
+
+    it 'falls back to friendly name for agency without parsing certificates' do
+      service_provider.update!(agency: nil)
+      expect_any_instance_of(ServiceProvider).not_to receive(:ssl_certs)
+
+      expect(identity_with_sp.agency_name).to eq(service_provider.friendly_name)
+    end
   end
 
   describe '#agency_name' do
